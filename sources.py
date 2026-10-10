@@ -4943,8 +4943,9 @@ def build_html(
 ) -> str:
     """生成适合微信阅读的竖版长图文简报（内联样式，兼容 PushPlus HTML 模板）。
 
-    视觉基调：电子杂志 × 电子墨水。页面以浅灰纸张为底，正文使用黑色，
-    只用荧光绿和黑色做标题、标记与重点强调，避免邮件客户端中的复杂布局。
+    视觉基调：现代金融 App 风（参考截图）。纯白页面底色 + 浅灰圆角卡片，
+    标题与重点用黑色粗体，柠檬绿（#b5e61d）做标签、高亮、点阵与分段进度条点缀，
+    辅助信息用中性灰，避免邮件客户端中的复杂布局。
     ``now`` 保留在接口中以兼容现有调用，但报告标题不展示推送时间。
     ``review`` 为 A 股看盘结果；缺省时自动调用 analyze_ashare()（实时采集 → 快照兜底）。
     ``hk_review`` / ``us_review`` 为港股、美股看盘结果；缺省时分别调用 analyze_hk() / analyze_us()。
@@ -4967,15 +4968,17 @@ def build_html(
     if max_length is None:
         max_length = quota_max_length
 
-    # E-ink palette (black / white / grey only): paper, ink, white on black for emphasis.
-    neon_green = "#ffffff"   # 深底上的高亮（白）
+    # 简洁金融 App 配色（参考截图）：白底、浅灰卡片、黑色粗体、柠檬绿点缀。
+    neon_green = "#b5e61d"   # 柠檬绿点缀：高亮 / 标签 / 进度条
     ink = "#111111"
-    black = "#0a0a0a"
-    paper = "#e4e4e2"
-    paper_lift = "#f1f1ef"
-    muted = "#555555"
-    rule = "#b8b8b6"
-    danger_hi = "#bdbdbd"    # 黑底上的下跌（浅灰）
+    black = "#111111"
+    paper = "#ffffff"
+    paper_lift = "#f4f4f4"
+    muted = "#6b6b6b"
+    rule = "#e6e6e6"
+    gray_light = "#e4e4e4"
+    up_text = "#5f8f00"      # 上涨：深柠檬绿（白底可读）
+    danger_hi = "#767676"    # 下跌 / 承压：中性灰（单色点缀体系）
     analysis = analyze_brief(brief)
     hl_tags = list(dict.fromkeys(
         analysis["sectors"] + analysis["sectors_up"] + analysis["sectors_down"]
@@ -5169,8 +5172,8 @@ def build_html(
             pair = shown[idx:idx+2]
             cells = []
             for kw in pair:
-                # 左框颜色由情绪决定（偏多=绿，偏空=红，中性=灰）
-                border = black if kw.get("sentiment_label") == "偏多" else ("#8a8a8a" if kw.get("sentiment_label") == "偏空" else "#c4c4c2")
+                # 左框颜色由情绪决定（偏多=柠檬绿，偏空=中性灰，中性=浅灰）
+                border = neon_green if kw.get("sentiment_label") == "偏多" else ("#9a9a9a" if kw.get("sentiment_label") == "偏空" else "#e2e2e2")
                 heat = kw.get("heat", 0)
                 heat_label = kw.get("heat_level", "")
                 sentiment_label = kw.get("sentiment_label", "中性")
@@ -5178,24 +5181,38 @@ def build_html(
                 flow = kw.get("flow", "观望")
                 risk = kw.get("risk", "低")
                 # 热度条宽度=heat%
-                bar_color = black if kw.get("sentiment", 0) > 0.2 else ("#8a8a8a" if kw.get("sentiment", 0) < -0.2 else "#c4c4c2")
+                bar_color = neon_green if kw.get("sentiment", 0) > 0.2 else ("#9a9a9a" if kw.get("sentiment", 0) < -0.2 else "#d4d4d4")
+                # 徽章底色：正向=柠檬绿，负向=浅灰，中性=白底细线
+                if rating.startswith("强多") or "偏多" in rating:
+                    rating_css = f"background:{neon_green};color:{black};"
+                elif "偏空" in rating or "强空" in rating:
+                    rating_css = "background:#e8e8e8;color:#6b6b6b;"
+                else:
+                    rating_css = f"background:#ffffff;color:{muted};border:1px solid {rule};"
+                if flow == "流入":
+                    flow_css = f"background:{neon_green};color:{black};"
+                elif flow == "流出":
+                    flow_css = "background:#e8e8e8;color:#6b6b6b;"
+                else:
+                    flow_css = f"background:#ffffff;color:{muted};border:1px solid {rule};"
+                risk_css = f"background:#ffffff;color:{muted};border:1px solid {rule};"
                 concept = _esc(kw.get("concept") or kw.get("tag") or "")
                 pair_detail = _esc(kw.get("etf_pair_text") or "")
                 hint = _esc(kw.get("hint") or "")
                 # 线索列表不展示：格子只保留信号计数（标题/来源/时间“当日”/情绪标签 利好/利空/中性 不再列出）
                 ev_html = f'<div class="ev">信号 {kw.get("bull",0)}:{kw.get("bear",0)} · 线索列表不展示</div>'
                 cell = (
-                    f'<td style="width:50%;vertical-align:top;padding:6px;border:1px solid {black};border-left:4px solid {border};background:{paper};">'
+                    f'<td style="width:50%;vertical-align:top;padding:6px;border:1px solid {rule};border-left:4px solid {border};background:{paper};">'
                     f'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px;"><b style="font-size:12px;">{_esc(kw.get("keyword") or "")}</b>'
                     f'<span style="color:{muted};font-size:10px;">{_esc(kw.get("tag") or "")}</span></div>'
                     f'<div style="font-size:10px;color:{muted};margin-top:1px;"><b>{concept}</b></div>'
                     f'<div style="font-size:9px;color:{muted};margin-top:2px;line-height:1.35;">{pair_detail}</div>'
-                    f'<div style="height:6px;background:#cfcfce;border:1px solid {black};margin:5px 0;overflow:hidden;"><div style="height:100%;width:{heat}%;background:{bar_color};"></div></div>'
+                    f'<div style="height:6px;background:#ececec;border-radius:3px;margin:5px 0;overflow:hidden;"><div style="height:100%;width:{heat}%;background:{bar_color};border-radius:3px;"></div></div>'
                     f'<div style="font-size:10px;color:{ink};line-height:1.5;"><b>{_esc(heat_label)}</b>·热度<b>{heat}</b>｜情绪<b>{_esc(sentiment_label)}</b>（净{kw.get("net",0):+d}）｜{kw.get("sources",0)}源·{kw.get("mentions",0)}条</div>'
                     f'<div style="margin-top:4px;">'
-                    f'<span style="font-size:10px;background:{black};color:{neon_green if rating.startswith("强多") or "偏多" in rating else (danger_hi if "偏空" in rating or "强空" in rating else "#fff")};padding:1px 4px;">{_esc(rating)}</span> '
-                    f'<span style="font-size:10px;background:{"#c4c4c2" if flow=="流出" else (black if flow=="流入" else paper)};color:{black if flow=="流出" else ("#fff" if flow=="流入" else muted)};border:1px solid {black};padding:1px 4px;">{_esc(flow)}</span> '
-                    f'<span style="font-size:10px;background:{paper};border:1px solid {black};color:{muted};padding:1px 4px;">风险{_esc(risk)}</span>'
+                    f'<span style="font-size:10px;{rating_css}padding:1px 4px;border-radius:3px;">{_esc(rating)}</span> '
+                    f'<span style="font-size:10px;{flow_css}padding:1px 4px;border-radius:3px;">{_esc(flow)}</span> '
+                    f'<span style="font-size:10px;{risk_css}padding:1px 4px;border-radius:3px;">风险{_esc(risk)}</span>'
                     f'</div>'
                     f'{ev_html}'
                     f'</td>'
@@ -5500,37 +5517,46 @@ f'<div class="ftr">近30日只统计已核验发文日的全球政策，已观�
     # （多模型协同推理、模型清单那一大段注解文字）已按要求移除，推送内容与本地页面都不再展示。
     author = "作者：章鱼 ai　　仅供参考，分析研究"
 
+    # 参考截图的两个标志性构件：分段进度条（前两段柠檬绿）+ 8×3 点阵矩阵（点亮一簇）。
+    seg_html = '<div class="seg"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div>'
+    _mtx_on = {12, 13, 14, 19, 20, 21, 22}
+    mtx_html = ('<div class="mtx">' + "".join(
+        '<i class="on"></i>' if i in _mtx_on else '<i></i>' for i in range(24)) + '</div>')
+
     css = (
         f'<style>body,td,div,span,a{{font-family:Arial,\'PingFang SC\',\'Microsoft YaHei\',\'Noto Sans SC\',sans-serif;box-sizing:border-box;}}'
         f'.bg{{width:100%;max-width:100%;margin:0;padding:10px;background:{paper};color:{ink};word-break:break-word;}}'
-        f'.card{{margin:0 0 10px;background:{paper_lift};border:1px solid {black};border-top:4px solid {black};padding:8px 10px 6px;}}'
-        f'.card-m{{margin:0 0 10px;background:{black};border-left:5px solid {neon_green};padding:12px 11px;color:#fff;}}'
-        f'.hdr{{display:flex;justify-content:space-between;align-items:center;}}'
-        f'.tag{{color:{neon_green};background:{black};padding:2px 5px;font-size:10px;font-weight:700;}}'
-        f'.tag-d{{color:{danger_hi};background:{black};padding:2px 5px;font-size:10px;font-weight:700;}}'
-        f'.tag-w{{color:#fff;background:{black};padding:2px 5px;font-size:10px;font-weight:700;}}'
+        f'.card{{margin:0 0 10px;background:{paper_lift};border:1px solid {rule};border-radius:10px;padding:9px 11px 7px;}}'
+        f'.card-m{{margin:0 0 10px;background:{paper_lift};border:1px solid {rule};border-radius:10px;padding:11px 12px;color:{ink};}}'
+        f'.seg{{display:flex;gap:4px;margin:0 0 9px;}}.seg i{{flex:1;height:5px;border-radius:3px;background:{gray_light};}}.seg i.on{{background:{neon_green};}}'
+        f'.cm-row{{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;}}.cm-body{{flex:1;min-width:170px;}}'
+        f'.mtx{{display:grid;grid-template-columns:repeat(8,8px);gap:3px;}}.mtx i{{width:8px;height:8px;border-radius:2px;background:{gray_light};}}.mtx i.on{{background:{neon_green};}}'
+        f'.hdr{{display:flex;justify-content:space-between;align-items:center;gap:8px;padding-bottom:6px;border-bottom:1px solid {rule};}}'
+        f'.tag{{color:{black};background:{neon_green};padding:2px 5px;font-size:10px;font-weight:700;border-radius:3px;}}'
+        f'.tag-d{{color:#6b6b6b;background:#e8e8e8;padding:2px 5px;font-size:10px;font-weight:700;border-radius:3px;}}'
+        f'.tag-w{{color:{black};background:#ffffff;padding:2px 5px;font-size:10px;font-weight:700;border:1px solid {rule};border-radius:3px;}}'
         f'.sub{{color:{muted};font-size:10px;}}'
-        f'.tbl{{width:100%;border-collapse:collapse;margin-top:2px;}}'
-        f'.tbl-sub{{width:100%;border-collapse:collapse;margin-top:6px;border-top:1px dashed {rule};}}'
-        f'.tbl-idx{{width:100%;border-collapse:collapse;margin-top:6px;background:{black};}}'
-        f'.td-n{{width:22px;vertical-align:top;padding:4px 4px 4px 0;color:{muted};font-size:11px;}}'
+        f'.tbl{{width:100%;border-collapse:collapse;margin-top:4px;}}'
+        f'.tbl-sub{{width:100%;border-collapse:collapse;margin-top:6px;border-top:1px solid {rule};}}'
+        f'.tbl-idx{{width:100%;border-collapse:separate;border-spacing:0;margin-top:6px;background:#ffffff;border:1px solid {rule};border-radius:6px;}}'
+        f'.td-n{{width:22px;vertical-align:top;padding:4px 4px 4px 0;color:#9a9a9a;font-size:11px;}}'
         f'.td-t{{vertical-align:top;padding:4px 0;color:{ink};font-size:12px;line-height:1.5;word-break:break-all;}}'
         f'.td-p{{padding:4px 0 1px;color:{ink};font-size:12px;line-height:1.5;word-break:break-all;}}'
         f'.td-hdr{{padding:6px 0 1px;}}'
         f'.td-bdr{{border-bottom:1px solid {rule};}}'
         f'.ev{{margin:2px 0 0 12px;color:{muted};font-size:11px;word-break:break-all;}}'
         f'.lnk{{color:{ink};text-decoration:underline;text-decoration-color:{black};}}'
-        f'.hl{{color:{neon_green};background:{black};padding:1px 3px;font-weight:700;}}'
-        f'.hl-d{{color:{danger_hi};background:{black};padding:1px 3px;font-weight:700;}}'
+        f'.hl{{color:{black};background:{neon_green};padding:1px 3px;border-radius:3px;font-weight:700;}}'
+        f'.hl-d{{color:#6b6b6b;background:#e8e8e8;padding:1px 3px;border-radius:3px;font-weight:700;}}'
         f'.txt{{margin-top:4px;color:{ink};font-size:13px;line-height:1.5;word-break:break-all;}}'
-        f'.ftr{{margin-top:6px;padding-top:4px;border-top:1px dashed {rule};color:{muted};font-size:10px;}}'
+        f'.ftr{{margin-top:6px;padding-top:4px;border-top:1px solid {rule};color:{muted};font-size:10px;}}'
         f'.idx-cell{{text-align:center;width:25%;padding:5px 2px;}}'
-        f'.idx-n{{color:#9a9a9a;font-size:10px;}}'
+        f'.idx-n{{color:{danger_hi};font-size:10px;}}'
         f'.idx-p{{font-size:13px;font-weight:700;}}'
-        f'.idx-c{{color:#fff;font-size:10px;}}'
-        f'.up{{color:{neon_green};}}.dn{{color:{danger_hi};}}'
-        f'.bdr-l{{border-left:1px solid #444444;}}'
-        f'.mkt{{margin-top:8px;padding-top:6px;border-top:1px dashed {rule};}}'
+        f'.idx-c{{color:{ink};font-size:10px;}}'
+        f'.up{{color:{up_text};}}.dn{{color:{danger_hi};}}'
+        f'.bdr-l{{border-left:1px solid {rule};}}'
+        f'.mkt{{margin-top:8px;padding-top:6px;border-top:1px solid {rule};}}'
         f'.mkt-h{{margin:2px 0 4px;}}'
         f'</style>'
     )
@@ -5594,10 +5620,12 @@ f'<div class="ftr">近30日只统计已核验发文日的全球政策，已观�
         heatmap_card = _render_heatmap(deep_level)
         return (
             f'{css}<div class="bg">'
-            f'<div class="card-m">'
-            f'<div style="color:{neon_green};font-size:10px;margin-bottom:3px;">全网 AI 调研　/　境内 × 境外</div>'
-            f'<div style="color:{neon_green};font-size:20px;font-weight:800;">章鱼 AI·全景分析（市场情绪量化分析）</div>'
-            f'<div style="color:#fff;font-size:11px;margin-top:4px;">市场情绪量化分析 · 全网 AI 调研境内外数据，由多个大模型混合部署。</div></div>'
+            f'<div class="card-m">{seg_html}'
+            f'<div class="cm-row"><div class="cm-body">'
+            f'<div style="color:{muted};font-size:10px;margin-bottom:3px;">全网 AI 调研　/　境内 × 境外</div>'
+            f'<div style="color:{ink};font-size:20px;font-weight:800;">章鱼 AI·全景分析（市场情绪量化分析）</div>'
+            f'<div style="color:{muted};font-size:11px;margin-top:4px;">市场情绪量化分析 · 全网 AI 调研境内外数据，由多个大模型混合部署。</div>'
+            f'</div>{mtx_html}</div></div>'
             f'<div class="card"><div class="hdr"><span class="tag">AI 每日总结</span></div><div class="txt">{headline}</div>{points_html}</div>'
             + kanpan_card
             + heatmap_card
@@ -5606,7 +5634,7 @@ f'<div class="ftr">近30日只统计已核验发文日的全球政策，已观�
             + opportunities_card
             + _news_card(per_source)
             + f'<div style="margin:8px 0 0;color:{muted};font-size:10px;text-align:center;">数据仅供参考，不构成投资建议</div>'
-            + f'<div style="margin:6px 0 0;padding:6px 4px 0;border-top:1px solid {black};color:{black};font-size:10px;text-align:center;font-weight:700;">{_esc(author)}</div>'
+            + f'<div style="margin:6px 0 0;padding:6px 4px 0;border-top:1px solid {rule};color:{ink};font-size:10px;text-align:center;font-weight:700;">{_esc(author)}</div>'
             + '</div>'
         )
 
