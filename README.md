@@ -46,7 +46,7 @@ python3 -m http.server 8080
 | 财经社区 · 中英文观点 | 20 | 中文：雪球讨论、东方财富股吧、集思录、淘股吧、富途牛牛圈、老虎社区、TradingView 中文、知乎财经；英文：Reddit 投资 / 股票 / 价值 / 基本面 / 股息 / 期权 / 量化 / ETF，Bogleheads、Stocktwits、QuantConnect、Elite Trader | Reddit / 论坛 Atom·RSS；无稳定 RSS 的公开社区经 Google News RSS 检索，失败逐源回退 | — |
 | 政策发布 · 官方信息源 | 15 | 国务院最新政策 / 政策解读 / 政务联播、发改委、财政部、商务部、证监会、香港特区政府新闻公报、中国新闻社时政；美联储、欧洲央行、美国 SEC、美国联邦公报总统文件、英国财政部 GOV.UK、英国 FCA | 境内：政策发布列表页 + 链接正则（政府站无 RSS）+ 中国新闻社时政 RSS；境外：官方 RSS / Atom | [changwu/china-policy-sites](https://github.com/changwu/china-policy-sites) · [angelinajh/regtech-policy-tracker](https://github.com/angelinajh/regtech-policy-tracker) |
 | 全球政经媒体 | 12 | Reuters（经 Google News 检索）、Bloomberg 政治 / 经济、Financial Times、纽约时报国际、华盛顿邮报政治、POLITICO、Foreign Policy、The Diplomat、经济学人财经、日经亚洲、南华早报 | 官方 RSS | [edoardottt/news-list](https://github.com/edoardottt/news-list) |
-| 公民科技 · 政治透明度 | 4 | g0v 生态立法院議案（ly.govapi.tw）、EquityStack 政策承诺 / 法案追踪、GovTrack 国会重大立法动态 | 开放 JSON API / RSS | [g0v](https://github.com/g0v) · [keepittechie/equitystack](https://github.com/keepittechie/equitystack) |
+| 公民科技 · 政治透明度 | 4 | g0v 生态立法院議案（`v2.ly.govapi.tw`，老 `ly.govapi.tw` 端點已遷移）、EquityStack 政策承诺 / 法案追踪、GovTrack 国会重大立法动态 | 开放 JSON API / RSS | [g0v](https://github.com/g0v) · [keepittechie/equitystack](https://github.com/keepittechie/equitystack) |
 
 新增一个源只需在 `SOURCE_META` 加一行（`feed=` 订阅地址，或 `page=` 列表页 + `pattern=` 条目链接正则），再补一组 `_DEMO` 兜底标题即可；板块抓取的设计与各源链接特征见 `docs/policy_sections.md`。社区 / 政策 / 媒体板块的英文标题同样进入「AI 每日总结 / 情绪热力图 / 板块机会 / 政策分析」统计：主题、多空与鹰鸽词库均含英文词（按单词边界匹配，`AI` 不会误命中 `SAID`）。社区源另带 `language` 与 `community_type` 元数据，便于核对中英文及投资类型覆盖。
 

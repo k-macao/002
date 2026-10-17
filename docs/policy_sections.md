@@ -98,10 +98,10 @@ news-list 只给站点 / 通讯录，不给 RSS；这里选清单中有官方 RS
 
 | 源 | 数据 | 条目格式 |
 | --- | --- | --- |
-| g0v 立法院議案 | g0v 生态「立法院 API v2」`https://ly.govapi.tw/v2/bills?limit=N`（按最新進度日期倒序） | `〔議案狀態〕議案名稱（提案單位/提案委員）` → `ppg.ly.gov.tw` 議案頁 |
+| g0v 立法院議案 | g0v 生态「立法院 API v2」（基座已遷移至 `https://v2.ly.govapi.tw`，老 `ly.govapi.tw` 端點官方不再維護）`https://v2.ly.govapi.tw/v2/bills?limit=N`（按最新進度日期倒序） | `〔議案狀態〕議案名稱（提案單位/提案委員）` → `ppg.ly.gov.tw` 議案頁 |
 | EquityStack 政策承诺 | `https://equitystack.org/api/promises`（Promises → Actions → Outcomes 追踪） | `[状态] 承诺标题（议题 · 总统）` → `equitystack.org/promises/<slug>` |
 | EquityStack 法案追踪 | `https://equitystack.org/api/future-bills`（与承诺挂钩的国会法案，Congress.gov 数据） | `法案号｜法案名（状态 · 最新动作）` → congress.gov |
-| GovTrack 国会立法 | `https://www.govtrack.us/events/events.rss?feeds=misc:activebills2`（重大立法动态） | RSS 原标题 |
+| GovTrack 国会立法 | `https://www.govtrack.us/users/events-rss2.xpd?monitors=misc:activebills`（重大立法动态，GovTrack 官網 feed 位址） | RSS 原标题 |
 
 g0v 组织本身的项目（vTaiwan、揪松網、people-in-news…）多为网站 / 社群工具，没有稳定的公开条目接口，
 `g0v.news`（Medium）feed 目前 500，故以其生态内的立法院 API 作为入口；后续有稳定 feed 时同样一行 `feed=` 即可接入。
