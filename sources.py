@@ -234,7 +234,7 @@ SOURCE_META = [
     {"name": "EquityStack 政策承诺", "section": "civic", "collector": "equitystack_promises"},
     {"name": "EquityStack 法案追踪", "section": "civic", "collector": "equitystack_bills"},
     {"name": "GovTrack 国会立法",    "section": "civic",
-     "feed": "https://www.govtrack.us/events/events.rss?feeds=misc:activebills2"},
+     "feed": "https://www.govtrack.us/users/events-rss2.xpd?monitors=misc:activebills"},
 ]
 
 SOURCES = [m["name"] for m in SOURCE_META]
@@ -1068,7 +1068,9 @@ def _collect_page(url: str, pattern: str, limit: int, headers: dict | None = Non
 # ---------------------------------------------------------------- 公民科技 · 政治透明度 抓取器
 # g0v 生态的立法院开放 API 与 EquityStack 公开接口都是 JSON，这里只取公开条目做标题化。
 
-_LY_BILLS_API = "https://ly.govapi.tw/v2/bills"
+# 2025-08 起立法院 API 正式遷移至 v2 基座（老 ly.govapi.tw 端點官方已宣佈不會再維護），
+# 請見 legisTaiwan R 套件 Notice：https://davidycliao.github.io/legisTaiwan/
+_LY_BILLS_API = "https://v2.ly.govapi.tw/v2/bills"
 _EQUITYSTACK_API = "https://equitystack.org/api"
 
 
