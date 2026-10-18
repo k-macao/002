@@ -1141,6 +1141,28 @@ footer strong { display: block; color: var(--ink); text-align: center; font-size
 
 .toast.show { transform: translateX(-50%) translateY(0); }
 
+/* DeepSeek 全网搜索（2026-10-17 Search API） */
+.ds-search-form { display: flex; gap: 8px; margin-bottom: 4px; }
+.ds-search-input {
+  flex: 1; min-width: 0; padding: 9px 11px;
+  border: 1px solid var(--rule); border-radius: 10px;
+  background: var(--paper); color: var(--ink); font-size: 12px;
+}
+.ds-search-input:focus-visible { outline: 2px solid var(--green-deep); outline-offset: 1px; }
+.ds-search-btn {
+  padding: 9px 16px; background: var(--green); border: none; border-radius: 10px;
+  color: var(--black); cursor: pointer; font-size: 12px; font-weight: 800; white-space: nowrap;
+}
+.ds-search-btn:hover { background: var(--green-press); }
+.ds-search-btn:disabled { cursor: wait; opacity: .6; }
+.ds-search-state { font-size: 10px; color: var(--ink-soft); margin: 6px 0; }
+.ds-search-results { list-style: none; margin: 8px 0 0; padding: 0; }
+.ds-search-results li { padding: 8px 0; border-top: 1px solid var(--rule); }
+.ds-search-results a { color: var(--ink); font-size: 12px; font-weight: 700; text-decoration: none; }
+.ds-search-results a:hover { text-decoration: underline; }
+.ds-result-meta { font-size: 10px; color: var(--ink-soft); margin-top: 2px; }
+.ds-result-snippet { font-size: 11px; color: var(--ink); margin-top: 3px; line-height: 1.5; }
+
 @media (max-width: 760px) {
   .hero-matrix {
     position: static;

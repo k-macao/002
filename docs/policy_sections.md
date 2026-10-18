@@ -13,7 +13,7 @@
 | --- | --- | --- | --- | --- |
 | `finance` | 财经快讯 | 12 | rebang.vip 聚合通道（`channel` + `origin`） | — |
 | `trending` | 热搜热点 | 6 | 自定义收集器（`collector`） | ourongxing/newsnow |
-| `community` | 财经社区 · 中英文观点 | 20 | Reddit / 论坛 Atom·RSS；无稳定 RSS 的公开社区经 Google News RSS 检索 | 中文 8 源 + 英文 12 源，覆盖 18 种投资类型 |
+| `community` | 财经社区 · 中英文观点 | 20 | Reddit / 论坛 Atom·RSS；无稳定 RSS 的公开社区优先经 DeepSeek Search API（2026-10-17，需 `DEEPSEEK_API_KEY`）检索，回退 Google News RSS | 中文 8 源 + 英文 12 源，覆盖 18 种投资类型 |
 | `policy` | 政策发布 · 官方信息源 | 15 | 境内列表页 + 链接正则（`page` + `pattern`）+ 中国新闻社时政 RSS；境外官方 RSS / Atom（`feed`） | changwu/china-policy-sites · angelinajh/regtech-policy-tracker |
 | `world` | 全球政经媒体 | 12 | 官方 RSS（`feed`） | edoardottt/news-list |
 | `civic` | 公民科技 · 政治透明度 | 4 | 开放 JSON API（`collector`）/ RSS（`feed`） | g0v · keepittechie/equitystack · GovTrack |
@@ -32,7 +32,7 @@
 社区板块通过 `language` 与 `community_type` 元数据显式记录语言和投资类型。中文 8 源包括雪球讨论、东方财富股吧、集思录、淘股吧、富途牛牛圈、老虎社区、TradingView 中文观点、知乎财经话题；英文 12 源包括 Reddit 的综合投资 / 股票 / 价值 / 基本面 / 股息 / 期权 / 量化 / ETF 八类社区，以及 Bogleheads、Stocktwits、QuantConnect、Elite Trader。
 
 - Reddit 与支持订阅的论坛直接读取 Atom / RSS。
-- 中文社区和没有稳定公开 RSS 的社区，沿用项目中 Reuters 已使用的 Google News RSS 检索方式：`site:<domain> when:7d`。
+- 中文社区和没有稳定公开 RSS 的社区，沿用项目中 Reuters 已使用的站内检索方式：配置 `DEEPSEEK_API_KEY` 后优先用 DeepSeek Search 拼 `site:<domain> lang:<zh|en> after:<7 天前>`，未配置/失败回退 Google News RSS 的 `site:<domain> when:7d`（见 `docs/deepseek_search.md`）。
 - 单站限流、前端渲染或 RSS 暂时失效时，只回退该源的 `_DEMO` 标题；其余 68 源不受影响。
 - 社区标题与新闻源使用同一套中英文主题、多空与政策词库，会进入 AI 总结、情绪热力图与板块机会统计；社区观点只作为情绪样本，不当成已核验事实。
 
@@ -82,7 +82,7 @@ news-list 只给站点 / 通讯录，不给 RSS；这里选清单中有官方 RS
 
 | 源 | 订阅地址 |
 | --- | --- |
-| Reuters 路透 | 路透官方 RSS 已停止，经 Google News RSS 检索 `site:reuters.com when:1d`，标题去掉「 - Reuters」后缀（`strip_suffix`） |
+| Reuters 路透 | 路透官方 RSS 已停止：优先用 DeepSeek Search 检索 `site:reuters.com lang:en after:<1 天前>`，回退 Google News RSS `site:reuters.com when:1d`，标题去掉「 - Reuters」后缀（`strip_suffix`） |
 | Bloomberg 政治 / 经济 | `https://feeds.bloomberg.com/politics/news.rss` · `https://feeds.bloomberg.com/economics/news.rss` |
 | Financial Times | `https://www.ft.com/rss/home`（国际版首页） |
 | 纽约时报 国际 | `https://rss.nytimes.com/services/xml/rss/nyt/World.xml` |

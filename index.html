@@ -389,6 +389,23 @@
       </article>
     </section>
 
+    <section class="pixel-section" id="deepseekSearchSection">
+      <div class="pixel-section-head">
+        <div><span class="kicker">DEEPSEEK SEARCH</span><h2>全网搜索</h2></div>
+        <span class="ai-pill" id="deepseekSearchPill">✦ DeepSeek 搜索</span>
+      </div>
+      <article class="insight-card">
+        <form class="ds-search-form" id="dsSearchForm">
+          <input class="ds-search-input" id="dsSearchInput" type="search" maxlength="128"
+                 placeholder="搜索全网：支持 site:xueqiu.com lang:zh after:2026-10-01 等算子" aria-label="搜索关键词" />
+          <button class="ds-search-btn" id="dsSearchBtn" type="submit">搜索</button>
+        </form>
+        <div class="ds-search-state" id="dsSearchState">DeepSeek 自研搜索引擎（2026-10-17 开放）· 服务端配置 DEEPSEEK_API_KEY 后可用；未配置时全部搜索型数据源自动回退原 RSS 通道。</div>
+        <ul class="ds-search-results" id="dsSearchResults"></ul>
+        <div class="insight-foot"><span>经 <code>/api/search</code> 调用 <code>POST /v1/tools/search</code>，结果按 rerank_score（0-3）与 authority（0-4）标注；按成功请求计费 $0.75/千次，同一查询 5 分钟内走缓存 · 搜索结果仅供调研，不构成投资建议</span></div>
+      </article>
+    </section>
+
     <footer>
       <strong>作者：章鱼 ai　　仅供参考，分析研究</strong>
     </footer>

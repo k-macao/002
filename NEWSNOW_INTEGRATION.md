@@ -120,6 +120,8 @@ class WeiboTableParser(HTMLParser):
 
 #### 3. Google news 中文使用 RSS
 
+> 后续更新（2026-10-17 DeepSeek Search API）：该源与仓库全部站内检索型数据源已优先改用 DeepSeek 自研搜索 API（需 `DEEPSEEK_API_KEY`），下述 Google News RSS 仅为未配置/搜索失败时的回退通道，详见 `docs/deepseek_search.md`。
+
 Google News 提供了稳定的 RSS 订阅源，通过 `xml.etree.ElementTree` 解析标题和链接。
 
 #### 4. 虎扑热搜使用正则表达式

@@ -43,9 +43,9 @@ python3 -m http.server 8080
 | --- | --- | --- | --- | --- |
 | 财经快讯 | 12 | MKTNews、华尔街见闻、财联社、雪球、格隆汇、法布财经、金十 | rebang.vip 聚合通道（服务端渲染，链接回指源站） | — |
 | 热搜热点 | 6 | 知乎、抖音、微博、虎扑、AI Hot、Google news 中文 | 直连 API / RSS | [ourongxing/newsnow](https://github.com/ourongxing/newsnow) |
-| 财经社区 · 中英文观点 | 20 | 中文：雪球讨论、东方财富股吧、集思录、淘股吧、富途牛牛圈、老虎社区、TradingView 中文、知乎财经；英文：Reddit 投资 / 股票 / 价值 / 基本面 / 股息 / 期权 / 量化 / ETF，Bogleheads、Stocktwits、QuantConnect、Elite Trader | Reddit / 论坛 Atom·RSS；无稳定 RSS 的公开社区经 Google News RSS 检索，失败逐源回退 | — |
+| 财经社区 · 中英文观点 | 20 | 中文：雪球讨论、东方财富股吧、集思录、淘股吧、富途牛牛圈、老虎社区、TradingView 中文、知乎财经；英文：Reddit 投资 / 股票 / 价值 / 基本面 / 股息 / 期权 / 量化 / ETF，Bogleheads、Stocktwits、QuantConnect、Elite Trader | Reddit / 论坛 Atom·RSS；无稳定 RSS 的公开社区优先经 **DeepSeek Search API**（2026-10-17 新开放，需 `DEEPSEEK_API_KEY`）站内检索，回退 Google News RSS 检索，失败再逐源回退 | — |
 | 政策发布 · 官方信息源 | 15 | 国务院最新政策 / 政策解读 / 政务联播、发改委、财政部、商务部、证监会、香港特区政府新闻公报、中国新闻社时政；美联储、欧洲央行、美国 SEC、美国联邦公报总统文件、英国财政部 GOV.UK、英国 FCA | 境内：政策发布列表页 + 链接正则（政府站无 RSS）+ 中国新闻社时政 RSS；境外：官方 RSS / Atom | [changwu/china-policy-sites](https://github.com/changwu/china-policy-sites) · [angelinajh/regtech-policy-tracker](https://github.com/angelinajh/regtech-policy-tracker) |
-| 全球政经媒体 | 12 | Reuters（经 Google News 检索）、Bloomberg 政治 / 经济、Financial Times、纽约时报国际、华盛顿邮报政治、POLITICO、Foreign Policy、The Diplomat、经济学人财经、日经亚洲、南华早报 | 官方 RSS | [edoardottt/news-list](https://github.com/edoardottt/news-list) |
+| 全球政经媒体 | 12 | Reuters（优先经 DeepSeek Search 检索，回退 Google News）、Bloomberg 政治 / 经济、Financial Times、纽约时报国际、华盛顿邮报政治、POLITICO、Foreign Policy、The Diplomat、经济学人财经、日经亚洲、南华早报 | 官方 RSS | [edoardottt/news-list](https://github.com/edoardottt/news-list) |
 | 公民科技 · 政治透明度 | 4 | g0v 生态立法院議案（ly.govapi.tw）、EquityStack 政策承诺 / 法案追踪、GovTrack 国会重大立法动态 | 开放 JSON API / RSS | [g0v](https://github.com/g0v) · [keepittechie/equitystack](https://github.com/keepittechie/equitystack) |
 
 新增一个源只需在 `SOURCE_META` 加一行（`feed=` 订阅地址，或 `page=` 列表页 + `pattern=` 条目链接正则），再补一组 `_DEMO` 兜底标题即可；板块抓取的设计与各源链接特征见 `docs/policy_sections.md`。社区 / 政策 / 媒体板块的英文标题同样进入「AI 每日总结 / 情绪热力图 / 板块机会 / 政策分析」统计：主题、多空与鹰鸽词库均含英文词（按单词边界匹配，`AI` 不会误命中 `SAID`）。社区源另带 `language` 与 `community_type` 元数据，便于核对中英文及投资类型覆盖。
@@ -77,5 +77,6 @@ PUSHPLUS_TOKEN=xxx python3 push_brief.py
 - `SKIP_SENSITIVE_CHECK=1`：跳过敏感词检测（测试 / 应急，不建议日常开启）。
 - `SENSITIVE_FORCE=pass|block`：强制敏感词闸门结果，用于联调测试。
 - `SENSITIVE_LEXICON=/path/to.txt`：外掛敏感词（一行一词；`block:词` 为高严重度）。
+- `DEEPSEEK_API_KEY=sk-...`：**全部搜索切换到 DeepSeek Search API**（2026-10-17 开放自研搜索，`POST /v1/tools/search`，$0.75/千次成功请求、空结果免费、5 QPS）。仓库里原先经 Google News RSS 检索的 11 个源（10 个财经社区 + Reuters）与「Google news 中文」在配置后优先用 DeepSeek（`site: / lang: / after:` 算子），未配置 / 失败 / 空结果自动回退原 RSS 通道；页面底部新增「全网搜索」卡片（`GET /api/search`），另有 `GET /api/deepseek/status` 自检与 `GET|POST /api/fetch` 单页抓取（Fetch API）。GitHub Actions 加同名 Secret 即启用。配套变量：`DEEPSEEK_SEARCH_ENABLED=0`（显式禁用）、`DEEPSEEK_API_BASE_URL`（覆盖端点地址）、`DEEPSEEK_NEWS_QUERY`（覆盖中文新闻源检索词）。接入细节与成本口径见 `docs/deepseek_search.md`。
 
 数据仅供参考，不构成投资建议。
