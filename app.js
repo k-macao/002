@@ -474,3 +474,72 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
   }
   window._policyDeepReload=loadPolicyDeep;
 })();
+
+/* ---- DeepSeek 全网搜索（2026-10-17 Search API）----
+   表单走相对路径 api/search（浏览器不直连 api.deepseek.com，Key 只在服务端）。 */
+(function(){
+  const form=document.getElementById('dsSearchForm');
+  const input=document.getElementById('dsSearchInput');
+  const btn=document.getElementById('dsSearchBtn');
+  const state=document.getElementById('dsSearchState');
+  const list=document.getElementById('dsSearchResults');
+  const pill=document.getElementById('deepseekSearchPill');
+  if(!form || !input || !btn || !state || !list) return;
+
+  function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  async function loadStatus(){
+    try{
+      const res=await fetch('api/deepseek/status');
+      if(!res.ok) return;
+      const data=await res.json();
+      if(pill) pill.textContent=data.enabled ? '✦ DeepSeek 已启用' : '✦ 未配置走 RSS 回退';
+      if(data.enabled){
+        state.textContent=`DeepSeek Search 已启用（${data.search_backed_sources?data.search_backed_sources.length:0} 个搜索型数据源同后端）· 每个查询最多 128 字符，结果数默认 10`;
+      }
+    }catch(e){ /* 静态托管/离线：保留默认文案 */ }
+  }
+
+  async function doSearch(q){
+    btn.disabled=true;
+    state.textContent='搜索中…';
+    list.innerHTML='';
+    try{
+      const res=await fetch('api/search?q='+encodeURIComponent(q)+'&count=10');
+      const data=await res.json().catch(()=>({}));
+      if(!res.ok){
+        state.textContent=data.message || `搜索失败（HTTP ${res.status}）`;
+        return;
+      }
+      const rows=data.results||[];
+      state.textContent=rows.length
+        ? `找到 ${rows.length} 条结果${data.cached?'（命中 5 分钟缓存，不重复计费）':''}`
+        : '没有匹配结果（空结果不计费）。';
+      list.innerHTML=rows.map(item=>{
+        const meta=[
+          item.site_name?esc(item.site_name):'',
+          item.date?esc(String(item.date).slice(0,10)):'',
+          (item.rerank_score!=null)?`相关度 ${Number(item.rerank_score).toFixed(1)}/3`:'',
+          (item.authority!=null && item.authority>=0)?`权威度 ${item.authority}/4`:'',
+        ].filter(Boolean).join(' · ');
+        const href=item.url?esc(item.url):'#';
+        return `<li><a href="${href}" target="_blank" rel="noopener noreferrer">${esc(item.title)}</a>`
+          + (meta?`<div class="ds-result-meta">${meta}</div>`:'')
+          + (item.snippet?`<div class="ds-result-snippet">${esc(item.snippet)}</div>`:'')
+          + `</li>`;
+      }).join('');
+    }catch(e){
+      state.textContent='搜索请求失败：请用 server.py 启动服务（静态托管没有 /api/search）。';
+    }finally{
+      btn.disabled=false;
+    }
+  }
+
+  form.addEventListener('submit', function(ev){
+    ev.preventDefault();
+    const q=input.value.trim();
+    if(!q){ state.textContent='先输入搜索关键词（最多 128 字符，支持 site: / lang: / after: 算子）。'; return; }
+    doSearch(q);
+  });
+  loadStatus();
+})();

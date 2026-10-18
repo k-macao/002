@@ -25,4 +25,7 @@ jobs:
       - name: 执行推送
         env:
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          # 可选：配置后全部搜索型数据源优先走 DeepSeek Search API（2026-10-17 新开放），
+          # 未配置自动回退原 Google News RSS 检索，推送不受影响。见 docs/deepseek_search.md
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: python push_brief.py

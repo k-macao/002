@@ -16,6 +16,12 @@
 - 「公民科技 · 政治透明度」板块：g0v 生态立法院开放 API、keepittechie/equitystack 公开接口、GovTrack RSS。
 - 抓取顺序：自定义收集器 / RSS·Atom / 列表页 / 聚合通道 → 内置演示数据兜底，
   保证任何环境（本地 / GitHub Pages / GitHub Actions）都能稳定出结果；各源并发抓取。
+- **全部「搜索型」数据源已接入 DeepSeek 2026-10-17 开放自研 Search API**
+  （``POST https://api.deepseek.com/v1/tools/search``，见 ``deepseek_search.py``）：
+  原先经 Google News RSS 检索的 10 个财经社区源 + Reuters、以及「Google news 中文」，
+  配置 ``DEEPSEEK_API_KEY`` 后一律优先用 DeepSeek 搜索（``site: / lang: / after:`` 算子），
+  未配置 / 搜索失败 / 空结果时自动回退原 Google News RSS 通道，行为与接入前一致。
+  详见 ``docs/deepseek_search.md``。
 
 对外接口
 --------
@@ -26,6 +32,9 @@
     collect_all()      : 并发抓取全部源，返回 {name: [item, ...]}
     collect_section(k) : 只抓某个板块（finance / trending / community / policy / world / civic）
     collect_one(name)  : 抓取单个源，返回 [item, ...]
+    web_search(q)      : DeepSeek Search 全网搜索（2026-10-17 新 API），返回归一化条目
+    fetch_web_page(u)  : DeepSeek Fetch 抓单页 Markdown 正文 {title, content, url}
+    deepseek_search_sources() : 全部已接入 DeepSeek 搜索的数据源清单（供状态接口与文档）
     analyze_brief()    : 本地「AI 总结」引擎（主题热度 + 多空博弈概率）
     analyze_policy()   : 「AI 政策分析」引擎（政策维度热度 + 多空方向 + 鹰鸽取向；始终附带近30日全球政策
                          对 A股/港股/美股的影响。deep=True 时再叠加知识库检索 / 修饰词口径 / 舆情情感 /
@@ -60,6 +69,7 @@ import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from datetime import datetime, timedelta, timezone
+import deepseek_search
 import policy_impact
 from urllib.parse import urlencode, urljoin
 from html.parser import HTMLParser
@@ -99,11 +109,25 @@ SECTION_LABELS = {s["key"]: s["label"] for s in SECTIONS}
 _GOVCN_PATTERN = r"gov\.cn/(?:zhengce|lianbo|yaowen|zhuanti)/.*content_\d+\.htm"
 
 
+def _deepseek_site(domain: str, language: str = "zh", days: int = 7, term: str = "") -> dict:
+    """标记「搜索型」数据源：优先用 DeepSeek Search（2026-10-17 新 API）站内检索。
+
+    采集时拼成 ``[term] site:{domain} lang:{language} after:{days 天前日期}``
+    （见 ``deepseek_search.site_search_query``）。该字段只是搜索参数，不改变源清单；
+    未配置 ``DEEPSEEK_API_KEY`` 时采集完全走原 ``feed`` 通道，见 :func:`_collect_live`。
+    """
+    cfg = {"domain": domain, "language": language, "days": days}
+    if term:
+        cfg["term"] = term
+    return cfg
+
+
 def _community_search_feed(domain: str, language: str = "zh") -> str:
-    """用 Google News RSS 检索公开社区帖子。
+    """用 Google News RSS 检索公开社区帖子（DeepSeek Search 未启用时的回退通道）。
 
     部分财经社区为前端渲染、没有 RSS；这里沿用 Reuters 数据源已采用的 Google News
-    公共 RSS 通道。抓不到内容时仍按单源回退到明确标注的演示标题。
+    公共 RSS 通道。配置 ``DEEPSEEK_API_KEY`` 后搜索型源优先走 DeepSeek Search，
+    本 URL 仅作回退。抓不到内容时仍按单源回退到明确标注的演示标题。
     """
     if language == "en":
         locale = {"hl": "en-US", "gl": "US", "ceid": "US:en"}
@@ -146,23 +170,25 @@ SOURCE_META = [
     {"name": "AI Hot",          "section": "trending", "collector": "aihot"},
     {"name": "Google news 中文", "section": "trending", "collector": "google_news"},
     # --- 财经社区（新增 20 个中英文 / 不同投资类型社区）---
-    # 中文社区大多没有稳定 RSS，使用 Google News 公共 RSS 检索其公开帖子；英文 Reddit
-    # 社区直接读取 Atom。每个源都保留离线演示标题，任一站点限流不会拖垮整份简报。
-    {"name": "雪球 讨论精选", "section": "community", "feed": _community_search_feed("xueqiu.com"),
+    # 中文社区大多没有稳定 RSS：配置 DEEPSEEK_API_KEY 后带 deepseek_search 的源优先用
+    # DeepSeek Search（2026-10-17 新 API）站内检索，未配置/失败回退 Google News 公共 RSS
+    # 检索（feed 字段）；英文 Reddit 社区直接读取 Atom。每个源都保留离线演示标题，
+    # 任一站点限流不会拖垮整份简报。
+    {"name": "雪球 讨论精选", "section": "community", "feed": _community_search_feed("xueqiu.com"), "deepseek_search": _deepseek_site("xueqiu.com"),
      "language": "zh", "community_type": "综合投资"},
-    {"name": "东方财富 股吧热议", "section": "community", "feed": _community_search_feed("guba.eastmoney.com"),
+    {"name": "东方财富 股吧热议", "section": "community", "feed": _community_search_feed("guba.eastmoney.com"), "deepseek_search": _deepseek_site("guba.eastmoney.com"),
      "language": "zh", "community_type": "个股讨论"},
-    {"name": "集思录 投资社区", "section": "community", "feed": _community_search_feed("jisilu.cn"),
+    {"name": "集思录 投资社区", "section": "community", "feed": _community_search_feed("jisilu.cn"), "deepseek_search": _deepseek_site("jisilu.cn"),
      "language": "zh", "community_type": "ETF · 可转债"},
-    {"name": "淘股吧 市场讨论", "section": "community", "feed": _community_search_feed("taoguba.com.cn"),
+    {"name": "淘股吧 市场讨论", "section": "community", "feed": _community_search_feed("taoguba.com.cn"), "deepseek_search": _deepseek_site("taoguba.com.cn"),
      "language": "zh", "community_type": "短线交易"},
-    {"name": "富途 牛牛圈", "section": "community", "feed": _community_search_feed("futunn.com"),
+    {"name": "富途 牛牛圈", "section": "community", "feed": _community_search_feed("futunn.com"), "deepseek_search": _deepseek_site("futunn.com"),
      "language": "zh", "community_type": "港美股"},
-    {"name": "老虎社区", "section": "community", "feed": _community_search_feed("laohu8.com"),
+    {"name": "老虎社区", "section": "community", "feed": _community_search_feed("laohu8.com"), "deepseek_search": _deepseek_site("laohu8.com"),
      "language": "zh", "community_type": "港美股"},
-    {"name": "TradingView 中文观点", "section": "community", "feed": _community_search_feed("cn.tradingview.com"),
+    {"name": "TradingView 中文观点", "section": "community", "feed": _community_search_feed("cn.tradingview.com"), "deepseek_search": _deepseek_site("cn.tradingview.com"),
      "language": "zh", "community_type": "技术分析"},
-    {"name": "知乎 财经话题", "section": "community", "feed": _community_search_feed("zhihu.com/topic/19550517"),
+    {"name": "知乎 财经话题", "section": "community", "feed": _community_search_feed("zhihu.com/topic/19550517"), "deepseek_search": _deepseek_site("zhihu.com", term="财经"),
      "language": "zh", "community_type": "财经问答"},
     {"name": "Reddit r/investing", "section": "community", "feed": "https://www.reddit.com/r/investing/new/.rss",
      "headers": _COMMUNITY_HEADERS, "language": "en", "community_type": "综合投资"},
@@ -182,9 +208,9 @@ SOURCE_META = [
      "headers": _COMMUNITY_HEADERS, "language": "en", "community_type": "ETF 配置"},
     {"name": "Bogleheads 论坛", "section": "community", "feed": "https://www.bogleheads.org/forum/feed.php",
      "headers": _COMMUNITY_HEADERS, "language": "en", "community_type": "长期指数"},
-    {"name": "Stocktwits 市场脉搏", "section": "community", "feed": _community_search_feed("stocktwits.com", "en"),
+    {"name": "Stocktwits 市场脉搏", "section": "community", "feed": _community_search_feed("stocktwits.com", "en"), "deepseek_search": _deepseek_site("stocktwits.com", "en"),
      "language": "en", "community_type": "实时情绪"},
-    {"name": "QuantConnect 量化社区", "section": "community", "feed": _community_search_feed("quantconnect.com/forum", "en"),
+    {"name": "QuantConnect 量化社区", "section": "community", "feed": _community_search_feed("quantconnect.com/forum", "en"), "deepseek_search": _deepseek_site("quantconnect.com", "en", term="forum"),
      "language": "en", "community_type": "量化研究"},
     {"name": "Elite Trader 论坛", "section": "community", "feed": "https://www.elitetrader.com/et/forums/-/index.rss",
      "headers": _COMMUNITY_HEADERS, "language": "en", "community_type": "专业交易"},
@@ -215,8 +241,8 @@ SOURCE_META = [
     {"name": "英国财政部 GOV.UK", "section": "policy", "feed": "https://www.gov.uk/government/organisations/hm-treasury.atom"},
     {"name": "英国 FCA 新闻",     "section": "policy", "feed": "https://www.fca.org.uk/news/rss.xml"},
     # --- 全球政经媒体（edoardottt/news-list 清单里的政治 / 地缘 / 经济头部媒体，走官方 RSS）---
-    # 路透官方 RSS 已停止，改经 Google News RSS 检索 reuters.com 近 24 小时报道（标题去掉「 - Reuters」后缀）。
-    {"name": "Reuters 路透",      "section": "world", "strip_suffix": " - Reuters",
+    # 路透官方 RSS 已停止：优先用 DeepSeek Search 检索 reuters.com 近 24 小时报道，回退 Google News RSS 检索（标题去掉「 - Reuters」后缀）。
+    {"name": "Reuters 路透",      "section": "world", "strip_suffix": " - Reuters", "deepseek_search": _deepseek_site("reuters.com", "en", days=1),
      "feed": "https://news.google.com/rss/search?q=site:reuters.com+when:1d&hl=en-US&gl=US&ceid=US:en"},
     {"name": "Bloomberg 政治",    "section": "world", "feed": "https://feeds.bloomberg.com/politics/news.rss"},
     {"name": "Bloomberg 经济",    "section": "world", "feed": "https://feeds.bloomberg.com/economics/news.rss"},
@@ -969,8 +995,70 @@ def _collect_aihot(limit: int) -> list:
     return items
 
 
+def _deepseek_news_query(today=None) -> str:
+    """「Google news 中文」源的 DeepSeek 等价检索式：中文今日要闻（近 1 天）。
+
+    可用 ``DEEPSEEK_NEWS_QUERY`` 覆盖检索词（算子自行拼写时整串生效，
+    仍受官方 128 字符上限校验）。
+    """
+    override = (os.environ.get("DEEPSEEK_NEWS_QUERY") or "").strip()
+    if override:
+        return override[:deepseek_search.QUERY_MAX_CHARS]
+    day = (today or datetime.now().date()) - timedelta(days=1)
+    return f"今日新闻 要闻 财经 lang:zh after:{day.isoformat()}"
+
+
+def _collect_via_deepseek_search(meta: dict, limit: int) -> list:
+    """搜索型源的 DeepSeek 采集：未启用 / 失败 / 空结果一律返回 [] 交回退通道处理。
+
+    绝不向上抛 ``DeepSeekSearchError``——否则单源会跳过原 RSS 通道直接掉演示数据，
+    把「新搜索 API 抖动」放大成「整源没数据」。
+    """
+    cfg = meta.get("deepseek_search")
+    if not cfg or not deepseek_search.is_enabled():
+        return []
+    try:
+        query = deepseek_search.site_search_query(
+            cfg["domain"], cfg.get("language", "zh"), cfg.get("days", 7),
+            term=cfg.get("term", ""))
+        return deepseek_search.search_items(
+            query, limit=limit, strip_suffix=meta.get("strip_suffix", ""))
+    except deepseek_search.DeepSeekSearchError:
+        return []
+
+
+def deepseek_search_sources() -> list:
+    """全部已接入 DeepSeek Search 的数据源名（含走 collector 的「Google news 中文」）。"""
+    names = [m["name"] for m in SOURCE_META if m.get("deepseek_search")]
+    if any(m.get("collector") == "google_news" for m in SOURCE_META):
+        names.insert(0, "Google news 中文")
+    return names
+
+
+def web_search(query: str, limit: int = 10, need_content: bool = False) -> list:
+    """DeepSeek Search 全网搜索（2026-10-17 新 API）：返回归一化条目列表。
+
+    底层 ``POST /v1/tools/search``；校验 / 限流 / 重试细节见 ``deepseek_search.py``。
+    未配置 Key 时抛 ``deepseek_search.DeepSeekNotConfigured``，由调用方决定如何提示。
+    """
+    return deepseek_search.search_items(query, limit=limit, need_content=need_content)
+
+
+def fetch_web_page(url: str) -> dict:
+    """DeepSeek Fetch 抓单页 Markdown 正文：``POST /v1/tools/fetch`` → {title, content, url}。"""
+    return deepseek_search.fetch_page(url)
+
+
 def _collect_google_news(limit: int) -> list:
-    """Google News 中文 - RSS 抓取。"""
+    """Google news 中文：优先 DeepSeek Search（2026-10-17 新 API），回退 Google News RSS。"""
+    if deepseek_search.is_enabled():
+        try:
+            items = deepseek_search.search_items(_deepseek_news_query(), limit=limit)
+            if items:
+                return items
+        except deepseek_search.DeepSeekSearchError:
+            pass  # 搜索 API 不可用时回退 RSS，不影响本源出数
+
     url = "https://news.google.com/rss?hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
     try:
         raw = _fetch(url)
@@ -1167,8 +1255,10 @@ _COLLECTORS = {
 }
 
 # 抓取过程中允许吞掉的异常：网络 / 超时 / 解析失败都回退演示数据；其他异常照常抛出以暴露 bug。
+# DeepSeekSearchError 同列：搜索 API 的限流/欠费/网络失败只应影响单源回退，不许拖垮整份简报。
 _FETCH_ERRORS = (HTTPError, URLError, TimeoutError, OSError, HTTPException,
-                 ValueError, KeyError, TypeError, ET.ParseError, json.JSONDecodeError)
+                 ValueError, KeyError, TypeError, ET.ParseError, json.JSONDecodeError,
+                 deepseek_search.DeepSeekSearchError)
 
 # 并发抓取线程数（源之间互不依赖；BRIEF_FETCH_WORKERS=1 可退回串行）。
 FETCH_WORKERS_DEFAULT = 8
@@ -1182,7 +1272,15 @@ def fetch_workers() -> int:
 
 
 def _collect_live(meta: dict, limit: int) -> list:
-    """按元信息实际抓取（不含兜底）：collector → feed → page → channel。"""
+    """按元信息实际抓取（不含兜底）：DeepSeek 搜索（仅搜索型源）→ collector → feed → page → channel。
+
+    带 ``deepseek_search`` 元信息的源在配置 ``DEEPSEEK_API_KEY`` 后优先走
+    DeepSeek Search（2026-10-17 新 API）；未启用 / 失败 / 空结果才走原通道，
+    因此未配置 Key 时的抓取行为与接入前完全一致。
+    """
+    items = _collect_via_deepseek_search(meta, limit)
+    if items:
+        return items
     if "collector" in meta:
         func = _COLLECTORS.get(meta["collector"])
         return func(limit) if func else []

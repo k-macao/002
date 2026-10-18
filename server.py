@@ -8,6 +8,13 @@ POST /api/run 推送前闸门与 ``push_brief.py`` 相同：
 大盘数据非最新 → 409；敏感词检测未通过 → 422。
 推送默认一对一（只发给 token 所属账号）；显式设 PUSHPLUS_TOPIC=oai.1 才是一对多群组推送。
 诊断：GET /api/market、GET /api/sensitive。
+
+DeepSeek Search & Fetch（2026-10-17 新 API，需 DEEPSEEK_API_KEY）：
+GET  /api/deepseek/status 配置自检（不泄漏 Key）
+GET  /api/search?q=...&count=10&need_content=0 全网搜索
+POST /api/search {"query": ..., "count": ...} 同上
+GET  /api/fetch?url=... / POST /api/fetch {"url": ...} 抓单页 Markdown 正文
+未配置 Key 时搜索/抓取返回 503，其余接口不受影响。
 """
 import json
 import os
@@ -19,6 +26,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs
 from urllib.request import Request, urlopen
 
+import deepseek_search
 import sensitive
 import sources
 
@@ -36,6 +44,38 @@ _BRIEF_TTL = 300
 # /api/market 与推送闸门共用的大盘数据缓存（东方财富日 K + 新鲜度检查）。
 _MARKET_CACHE = {"at": 0.0, "payload": None}
 _MARKET_TTL = 300
+# /api/search 的结果缓存：DeepSeek Search 按成功请求计费（$0.75/千次），
+# 同一查询 5 分钟内复用结果，避免页面刷新重复计费。
+_SEARCH_CACHE: dict = {}
+_SEARCH_TTL = 300
+
+
+def cached_web_search(query: str, count: int, need_content: bool) -> tuple:
+    """带 5 分钟缓存的 DeepSeek 全网搜索，返回 (items, cache_hit)。"""
+    key = (query, count, bool(need_content))
+    now = time.time()
+    hit = _SEARCH_CACHE.get(key)
+    if hit and now - hit["at"] < _SEARCH_TTL:
+        return hit["items"], True
+    items = sources.web_search(query, limit=count, need_content=need_content)
+    _SEARCH_CACHE[key] = {"at": now, "items": items}
+    return items, False
+
+
+def _deepseek_error_response(handler, error: deepseek_search.DeepSeekSearchError):
+    """把 DeepSeek 客户端异常映射为 HTTP 响应（未配置 503 / 参数错误 400 / 上游失败 502）。"""
+    if isinstance(error, deepseek_search.DeepSeekNotConfigured):
+        return handler.send_json(HTTPStatus.SERVICE_UNAVAILABLE, {
+            "message": "服务端未配置 DEEPSEEK_API_KEY，DeepSeek Search/Fetch 未启用。"
+                       "申请 Key 后以 DEEPSEEK_API_KEY=... 启动服务即可；"
+                       "未配置时全部搜索型数据源自动回退原 RSS 通道。",
+            "docs": deepseek_search.DOCS_URL,
+        })
+    status = HTTPStatus.BAD_REQUEST if error.status == 400 else HTTPStatus.BAD_GATEWAY
+    return handler.send_json(status, {
+        "message": f"DeepSeek API 调用失败：{error}",
+        "upstream_status": error.status, "upstream_code": error.code,
+    })
 
 
 def get_brief():
@@ -147,6 +187,43 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as error:
                 return self.send_json(HTTPStatus.OK, {"error": str(error)})
             return self.send_json(HTTPStatus.OK, sources.analyze_policy(brief, deep=deep))
+        if path == "/api/deepseek/status":
+            # DeepSeek Search & Fetch 配置自检（2026-10-17 新 API）：不泄漏 Key，
+            # 附全部已接入搜索的数据源清单，供页面状态与排障。
+            payload = deepseek_search.status()
+            payload["search_backed_sources"] = sources.deepseek_search_sources()
+            payload["fallback"] = "未启用/搜索失败时搜索型源回退 Google News RSS，再回退演示数据"
+            return self.send_json(HTTPStatus.OK, payload)
+        if path == "/api/search":
+            # DeepSeek 全网搜索：?q=关键词&count=10&need_content=0（支持 site:/lang:/after: 算子）。
+            qs = parse_qs(query)
+            q = (qs.get("q") or qs.get("query") or [""])[0].strip()
+            if not q:
+                return self.send_json(HTTPStatus.BAD_REQUEST,
+                                      {"message": "缺少搜索关键词：请传 q（1-128 字符，可用 site:/lang:/after: 算子）"})
+            try:
+                count = int((qs.get("count") or ["10"])[0])
+            except ValueError:
+                count = 10
+            need_content = (qs.get("need_content") or [""])[0].strip().lower() in ("1", "true", "yes", "on")
+            try:
+                items, cache_hit = cached_web_search(q, deepseek_search.clamp_count(count), need_content)
+            except deepseek_search.DeepSeekSearchError as error:
+                return _deepseek_error_response(self, error)
+            return self.send_json(HTTPStatus.OK, {
+                "query": q, "count": len(items), "cached": cache_hit,
+                "provider": "deepseek-search", "results": items,
+            })
+        if path == "/api/fetch":
+            # DeepSeek Fetch：抓单页 Markdown 正文（?url=...）。
+            target = (parse_qs(query).get("url") or [""])[0].strip()
+            if not target:
+                return self.send_json(HTTPStatus.BAD_REQUEST, {"message": "缺少 url 参数"})
+            try:
+                page = sources.fetch_web_page(target)
+            except deepseek_search.DeepSeekSearchError as error:
+                return _deepseek_error_response(self, error)
+            return self.send_json(HTTPStatus.OK, page)
         if path == "/api/brief":
             # 可选 ?section=policy|world|civic|finance|trending：只返回该板块的源（走同一份缓存）。
             section = (parse_qs(query).get("section") or [""])[0].strip()
@@ -162,8 +239,51 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json(HTTPStatus.OK, brief)
         return super().do_GET()
 
+    def _read_json_body(self) -> dict:
+        """读取 POST JSON body；无 body / 非法 JSON 返回 {}（供各接口自行报缺参）。"""
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        if length <= 0:
+            return {}
+        try:
+            parsed = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError, OSError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
     def do_POST(self):
-        if self.path.split("?", 1)[0] != "/api/run":
+        path = self.path.split("?", 1)[0]
+        if path == "/api/search":
+            # DeepSeek 全网搜索（POST 版）：{"query": ..., "count": 10, "need_content": false}
+            body = self._read_json_body()
+            q = str(body.get("query") or body.get("q") or "").strip()
+            if not q:
+                return self.send_json(HTTPStatus.BAD_REQUEST,
+                                      {"message": "缺少搜索关键词：请在 JSON body 传 query（1-128 字符）"})
+            try:
+                items, cache_hit = cached_web_search(
+                    q, deepseek_search.clamp_count(body.get("count", 10)),
+                    bool(body.get("need_content", False)))
+            except deepseek_search.DeepSeekSearchError as error:
+                return _deepseek_error_response(self, error)
+            return self.send_json(HTTPStatus.OK, {
+                "query": q, "count": len(items), "cached": cache_hit,
+                "provider": "deepseek-search", "results": items,
+            })
+        if path == "/api/fetch":
+            # DeepSeek Fetch（POST 版）：{"url": "https://..."} → 单页 Markdown 正文。
+            body = self._read_json_body()
+            target = str(body.get("url") or "").strip()
+            if not target:
+                return self.send_json(HTTPStatus.BAD_REQUEST, {"message": "缺少 url 参数"})
+            try:
+                page = sources.fetch_web_page(target)
+            except deepseek_search.DeepSeekSearchError as error:
+                return _deepseek_error_response(self, error)
+            return self.send_json(HTTPStatus.OK, page)
+        if path != "/api/run":
             return self.send_json(HTTPStatus.NOT_FOUND, {"message": "接口不存在"})
 
         token = os.environ.get("PUSHPLUS_TOKEN")
