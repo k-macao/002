@@ -1383,6 +1383,8 @@ _THEMES = [
              "mortgage*", "home price*"]),
     ("消费", ["消费", "零售", "电商", "餐饮", "麦当劳", "宝洁", "亚马逊", "consumer*", "retail*",
              "e-commerce", "Amazon", "Walmart", "McDonald's"]),
+    ("东盟", ["东盟", "东南亚", "马来西亚", "印尼", "越南", "泰国", "ASEAN", "Malaysia",
+             "Indonesia", "Vietnam", "Thailand"]),
     ("航天", ["SpaceX", "火箭", "卫星", "发射", "rocket*", "satellite*", "spacecraft"]),
 ]
 
@@ -1630,7 +1632,8 @@ def analyze_brief(brief: dict, deep_policy: bool = False) -> dict:
 # 港股 ETF 双标的目录（只使用港交所现有 ETF 的 HKD 柜台）。
 # ``benchmark`` 是产品对应的指数 / 参考标的，不把主题代理写成个股推荐。
 # 目录在 2026-10-03 按 HKEX / 基金管理人公开资料核对；代码保留 5 位港股格式，
-# 便于读者与普通股票代码区分。ETF 仍有跟踪误差、流动性、汇率及衍生品等风险。
+# 便于读者与普通股票代码区分。2026-10-20 补入 8 只当期在港交所上市的主题 / 跨市场 ETF
+# （见 ``_HK_ETF_NEW_LISTINGS``）。ETF 仍有跟踪误差、流动性、汇率及衍生品等风险。
 _HK_ETF_CATALOG = {
     "03140.HK": {"name": "华夏港美人工智能 ETF", "benchmark": "Solactive G2 AI 50 Select Index NTR"},
     "02807.HK": {"name": "Global X 中国机器人及人工智能 ETF", "benchmark": "FactSet China Robotics and Artificial Intelligence Index"},
@@ -1657,25 +1660,61 @@ _HK_ETF_CATALOG = {
     "02800.HK": {"name": "盈富基金", "benchmark": "Hang Seng Index"},
     "03195.HK": {"name": "恒生标普 500 ETF", "benchmark": "S&P 500 Net Total Return Index"},
     "02834.HK": {"name": "iShares 纳斯达克 100 ETF", "benchmark": "NASDAQ-100 Index"},
+    # ── 2026-10-20 新增（按用户提供的港交所上市名单补入；指数名称取自产品全称，正式指数全称以上市文件为准）
+    "03143.HK": {"name": "大成银河香港交易所马来西亚交易所大型股 ETF",
+                 "benchmark": "Bursa Malaysia Large Cap Index（马来西亚交易所大型股指数）"},
+    "03599.HK": {"name": "广发香港交易所科技及美国科技 100 指数 ETF",
+                 "benchmark": "HKEX Tech & US Tech 100 Index（香港交易所科技及美国科技 100 指数）"},
+    "03569.HK": {"name": "华泰盈科香港交易所韩国交易所半导体指数 ETF",
+                 "benchmark": "HKEX KRX Semiconductor Index（香港交易所韩国交易所半导体指数）"},
+    "03093.HK": {"name": "Fullgoal 恒生港美机器人 ETF",
+                 "benchmark": "Hang Seng HK-US Robotics Index（恒生港美机器人指数）"},
+    "03566.HK": {"name": "广发 MSCI 全球战略金属精选指数 ETF",
+                 "benchmark": "MSCI Global Strategic Metals Select Index（MSCI 全球战略金属精选指数）"},
+    "03585.HK": {"name": "国泰海通全球未来科技 ETF",
+                 "benchmark": "Global Future Technology Index（全球未来科技指数）"},
+    "03197.HK": {"name": "国泰海通全球战略资源 ETF",
+                 "benchmark": "Global Strategic Resources Index（全球战略资源指数）"},
+    "03438.HK": {"name": "恒生 AI 演进 ETF",
+                 "benchmark": "Hang Seng AI Evolution Index（恒生 AI 演进指数）"},
 }
+
+# 多柜台信息：同一只 ETF 的 HKD / CNY / USD 柜台代码不同（用户提供的上市名单口径）。
+# 未列出的产品按「HKD 单柜台」处理；人民币柜台 8xxxx、美元柜台 4xxxx / 9xxxx。
+_HK_ETF_COUNTERS = {
+    "03599.HK": {"HKD": "03599.HK", "CNY": "83599.HK", "USD": "41599.HK"},
+    "03566.HK": {"HKD": "03566.HK", "CNY": "83566.HK", "USD": "41566.HK"},
+    "03585.HK": {"HKD": "03585.HK", "CNY": "83585.HK", "USD": "41585.HK"},
+    # 3197 的美元柜台在港交所是 4 位数 9197，标准 5 位写法为 09197。
+    "03197.HK": {"HKD": "03197.HK", "CNY": "83197.HK", "USD": "09197.HK"},
+}
+
+_HK_ETF_NEW_LISTINGS = (
+    "03143.HK", "03599.HK", "03569.HK", "03093.HK",
+    "03566.HK", "03585.HK", "03197.HK", "03438.HK",
+)
 
 # 每一个 AI 关键词都先按所属主题得到一组恰好两个港股 ETF；无纯主题产品时明确写「代理」，
 # 而不是伪造对应产品。关键词级覆盖用于原油、云计算、矿产等可进一步精确归因的内容。
 _HK_ETF_PAIRS_BY_THEME = {
-    "AI 算力": {"codes": ("03140.HK", "02807.HK"), "note": "AI 软件/硬件 + 机器人产业链"},
-    "光通信": {"codes": ("03191.HK", "03033.HK"), "note": "半导体 + 恒生科技代理（港股暂无纯光通信 ETF）"},
-    "半导体": {"codes": ("03191.HK", "03076.HK"), "note": "中国 + 台湾半导体"},
-    "贵金属": {"codes": ("02840.HK", "03081.HK"), "note": "两只实物黄金 ETF"},
+    "AI 算力": {"codes": ("03438.HK", "03140.HK"), "note": "恒生 AI 演进 + 港美 AI（算力主线）"},
+    "光通信": {"codes": ("03599.HK", "03191.HK"), "note": "港美科技 100 + 中国半导体代理（港股暂无纯光通信 ETF）"},
+    "半导体": {"codes": ("03191.HK", "03569.HK"), "note": "中国 + 韩国半导体（存储 / 设备）"},
+    "贵金属": {"codes": ("02840.HK", "03566.HK"), "note": "实物黄金 + 全球战略金属"},
     "美联储": {"codes": ("03436.HK", "03156.HK"), "note": "短久期 + 长久期美国国债"},
-    "地缘": {"codes": ("02840.HK", "03156.HK"), "note": "黄金 + 长久期美债避险观察"},
+    "地缘": {"codes": ("02840.HK", "03197.HK"), "note": "黄金 + 全球战略资源（能源 / 金属）避险观察"},
     "医药": {"codes": ("02820.HK", "02841.HK"), "note": "生物科技 + 医疗科技"},
-    "智驾": {"codes": ("02845.HK", "02807.HK"), "note": "电动车电池 + 机器人/AI"},
+    "智驾": {"codes": ("02845.HK", "03093.HK"), "note": "电动车电池 + 港美机器人"},
     "地产": {"codes": ("03447.HK", "03001.HK"), "note": "亚太 REIT + 中国地产美元债"},
     "消费": {"codes": ("02806.HK", "03040.HK"), "note": "中国消费品牌 + MSCI 中国"},
-    "航天": {"codes": ("03140.HK", "02834.HK"), "note": "AI + 纳指科技代理（港股暂无纯商业航天 ETF）"},
+    "航天": {"codes": ("03585.HK", "02834.HK"), "note": "全球未来科技 + 纳指 100 代理（港股暂无纯商业航天 ETF）"},
+    "东盟": {"codes": ("03143.HK", "03599.HK"), "note": "马来西亚大型股 + 港美科技 100（东盟产业链观察）"},
 }
 
 _HK_ETF_PAIR_OVERRIDES = {
+    # 机器人：港美机器人 + 中国机器人及 AI 产业链（与 AI 主题下的算力主线区分）。
+    "机器人": {"codes": ("03093.HK", "02807.HK"), "note": "港美机器人 + 中国机器人及 AI"},
+    "robot": {"codes": ("03093.HK", "02807.HK"), "note": "港美机器人 + 中国机器人及 AI"},
     # 云 / 大模型更贴近云计算与中美 AI 指数。
     "大模型": {"codes": ("02826.HK", "03140.HK"), "note": "中国云计算 + 港美 AI"},
     "数据中心": {"codes": ("02826.HK", "03140.HK"), "note": "中国云计算 + 港美 AI"},
@@ -1693,27 +1732,60 @@ _HK_ETF_PAIR_OVERRIDES = {
     "原油": {"codes": ("03097.HK", "03175.HK"), "note": "两只 WTI 原油期货 ETF"},
     "crude": {"codes": ("03097.HK", "03175.HK"), "note": "两只 WTI 原油期货 ETF"},
     "oil": {"codes": ("03097.HK", "03175.HK"), "note": "两只 WTI 原油期货 ETF"},
-    "白银": {"codes": ("02840.HK", "02824.HK"), "note": "黄金 + 金矿股代理（港股暂无现行纯白银 ETF）"},
-    "铂金": {"codes": ("02840.HK", "02824.HK"), "note": "黄金 + 金矿股代理（港股暂无现行纯铂金 ETF）"},
-    "钯金": {"codes": ("02840.HK", "02824.HK"), "note": "黄金 + 金矿股代理（港股暂无现行纯钯金 ETF）"},
-    "silver": {"codes": ("02840.HK", "02824.HK"), "note": "黄金 + 金矿股代理（港股暂无现行纯白银 ETF）"},
-    "platinum": {"codes": ("02840.HK", "02824.HK"), "note": "黄金 + 金矿股代理（港股暂无现行纯铂金 ETF）"},
-    "稀土": {"codes": ("03014.HK", "02845.HK"), "note": "铜矿 + 电池材料代理（港股暂无纯稀土 ETF）"},
-    "矿产": {"codes": ("03014.HK", "02824.HK"), "note": "铜矿 + 金矿股"},
-    "rare earth": {"codes": ("03014.HK", "02845.HK"), "note": "铜矿 + 电池材料代理（港股暂无纯稀土 ETF）"},
-    "mineral": {"codes": ("03014.HK", "02824.HK"), "note": "铜矿 + 金矿股"},
+    "白银": {"codes": ("02840.HK", "03566.HK"), "note": "黄金 + 全球战略金属代理（港股暂无现行纯白银 ETF）"},
+    "铂金": {"codes": ("02840.HK", "03566.HK"), "note": "黄金 + 全球战略金属代理（港股暂无现行纯铂金 ETF）"},
+    "钯金": {"codes": ("02840.HK", "03566.HK"), "note": "黄金 + 全球战略金属代理（港股暂无现行纯钯金 ETF）"},
+    "silver": {"codes": ("02840.HK", "03566.HK"), "note": "黄金 + 全球战略金属代理（港股暂无现行纯白银 ETF）"},
+    "platinum": {"codes": ("02840.HK", "03566.HK"), "note": "黄金 + 全球战略金属代理（港股暂无现行纯铂金 ETF）"},
+    "稀土": {"codes": ("03566.HK", "03014.HK"), "note": "全球战略金属 + 铜矿代理（港股暂无纯稀土 ETF）"},
+    "矿产": {"codes": ("03566.HK", "03014.HK"), "note": "全球战略金属 + 铜矿"},
+    "rare earth": {"codes": ("03566.HK", "03014.HK"), "note": "全球战略金属 + 铜矿代理（港股暂无纯稀土 ETF）"},
+    "mineral": {"codes": ("03566.HK", "03014.HK"), "note": "全球战略金属 + 铜矿"},
     # 海外单一公司新闻使用有相关成份敞口的港股 ETF，不映射为个股。
     "英伟达": {"codes": ("03140.HK", "03191.HK"), "note": "港美 AI + 中国半导体"},
     "Nvidia": {"codes": ("03140.HK", "03191.HK"), "note": "港美 AI + 中国半导体"},
     "AMD": {"codes": ("03140.HK", "02834.HK"), "note": "港美 AI + 纳斯达克 100"},
     "台积电": {"codes": ("03076.HK", "03191.HK"), "note": "台湾 + 中国半导体"},
     "TSMC": {"codes": ("03076.HK", "03191.HK"), "note": "台湾 + 中国半导体"},
-    "特斯拉": {"codes": ("02845.HK", "03140.HK"), "note": "中国电动车电池 + 港美 AI 代理"},
-    "Tesla": {"codes": ("02845.HK", "03140.HK"), "note": "中国电动车电池 + 港美 AI 代理"},
+    "特斯拉": {"codes": ("02845.HK", "03093.HK"), "note": "中国电动车电池 + 港美机器人代理"},
+    "Tesla": {"codes": ("02845.HK", "03093.HK"), "note": "中国电动车电池 + 港美机器人代理"},
     "亚马逊": {"codes": ("02834.HK", "02806.HK"), "note": "纳斯达克 100 + 中国消费品牌代理"},
     "Amazon": {"codes": ("02834.HK", "02806.HK"), "note": "纳斯达克 100 + 中国消费品牌代理"},
-    "SpaceX": {"codes": ("03140.HK", "02834.HK"), "note": "AI + 纳指科技代理（港股暂无纯商业航天 ETF）"},
+    "SpaceX": {"codes": ("03585.HK", "02834.HK"), "note": "全球未来科技 + 纳指 100 代理（港股暂无纯商业航天 ETF）"},
+    # 东盟：直接使用马来西亚大型股 ETF，配港美科技 100 观察产业链转移。
+    "马来西亚": {"codes": ("03143.HK", "03599.HK"), "note": "马来西亚大型股 + 港美科技 100"},
+    "Malaysia": {"codes": ("03143.HK", "03599.HK"), "note": "马来西亚大型股 + 港美科技 100"},
+    "ASEAN": {"codes": ("03143.HK", "03599.HK"), "note": "马来西亚大型股 + 港美科技 100"},
 }
+
+
+def hk_etf_counters(code: str) -> dict:
+    """返回某只港股 ETF 的柜台代码：HKD / CNY / USD（未登记多柜台时只有 HKD）。"""
+    counters = _HK_ETF_COUNTERS.get(code)
+    if counters:
+        return dict(counters)
+    return {"HKD": code}
+
+
+def _hk_etf_counter_text(counters: dict) -> str:
+    """柜台文案：HKD 03599 / CNY 83599 / USD 41599。"""
+    return " / ".join(f"{ccy} {code}" for ccy, code in counters.items())
+
+
+def hk_etf_new_listings() -> list:
+    """2026-10-20 新增纳入热力图映射的 8 只港交所 ETF（含柜台与指数信息）。"""
+    items = []
+    for code in _HK_ETF_NEW_LISTINGS:
+        counters = hk_etf_counters(code)
+        product = dict(_HK_ETF_CATALOG[code])
+        product.update({
+            "code": code,
+            "counters": counters,
+            "counter_text": _hk_etf_counter_text(counters),
+            "multi_counter": len(counters) > 1,
+        })
+        items.append(product)
+    return items
 
 
 def hk_etf_pair(keyword: str, tag: str) -> list:
@@ -1725,7 +1797,14 @@ def hk_etf_pair(keyword: str, tag: str) -> list:
     pair = []
     for code in spec["codes"]:
         product = dict(_HK_ETF_CATALOG[code])
-        product.update({"code": code, "mapping": spec["note"]})
+        counters = hk_etf_counters(code)
+        product.update({
+            "code": code,
+            "mapping": spec["note"],
+            "counters": counters,
+            "counter_text": _hk_etf_counter_text(counters),
+            "multi_counter": len(counters) > 1,
+        })
         pair.append(product)
     return pair
 
@@ -1741,18 +1820,25 @@ def _hk_etf_pair_text(pair: list, benchmarks: bool = True) -> str:
     return " ＋ ".join(chunks)
 
 
+def _hk_etf_pair_counter_text(pair: list) -> str:
+    """双标的中多柜台产品的柜台文案；两只都是 HKD 单柜台时返回空字符串。"""
+    parts = [f"{item['code']}：{item['counter_text']}" for item in pair if item.get("multi_counter")]
+    return "；".join(parts)
+
+
 _HEATMAP_HINTS = {
-    "AI 算力": {"bull": "算力主线放量，观察 AI 软硬件 ETF 共振，忌追高", "bear": "AI 泡沫争议扰动，降低高估值主题暴露", "neutral": "AI 分歧加大，等待催化确认"},
-    "光通信": {"bull": "光纤扩产利好，观察半导体与恒科代理组合，防涨后回调", "bear": "光通信承压，等待订单验证", "neutral": "光通信轮动，先看 ETF 代理组合能否共振"},
-    "半导体": {"bull": "半导体景气回升，观察中国与台湾半导体 ETF", "bear": "制裁扰动，降低出口受限链暴露", "neutral": "半导体分化，看国产替代进度"},
-    "贵金属": {"bull": "贵金属避险走强，观察两只实物黄金 ETF", "bear": "贵金属回落，防追高", "neutral": "贵金属震荡，关注美元与利率"},
+    "AI 算力": {"bull": "算力主线放量，观察恒生 AI 演进与港美 AI ETF 共振，忌追高", "bear": "AI 泡沫争议扰动，降低高估值主题暴露", "neutral": "AI 分歧加大，等待催化确认"},
+    "光通信": {"bull": "光纤扩产利好，观察港美科技 100 与半导体代理组合，防涨后回调", "bear": "光通信承压，等待订单验证", "neutral": "光通信轮动，先看 ETF 代理组合能否共振"},
+    "半导体": {"bull": "半导体景气回升，观察中国与韩国半导体 ETF", "bear": "制裁扰动，降低出口受限链暴露", "neutral": "半导体分化，看国产替代与存储周期"},
+    "贵金属": {"bull": "贵金属避险走强，观察实物黄金与全球战略金属 ETF", "bear": "贵金属回落，防追高", "neutral": "贵金属震荡，关注美元与利率"},
     "美联储": {"bull": "宽松预期升温，比较短债与长债 ETF 的久期反应", "bear": "收紧预期压制估值，控制长久期暴露", "neutral": "美联储观望，等待议息确认"},
-    "地缘": {"bull": "地缘缓和利好风险偏好", "bear": "地缘扰动升温，观察黄金与长债避险组合", "neutral": "地缘分化，关注避险 ETF 相对强弱"},
+    "地缘": {"bull": "地缘缓和利好风险偏好", "bear": "地缘扰动升温，观察黄金与全球战略资源组合", "neutral": "地缘分化，关注避险 ETF 相对强弱"},
     "医药": {"bull": "医药反弹，观察生物科技与医疗科技 ETF", "bear": "医药承压，防集采与临床事件扰动", "neutral": "医药轮动，看临床数据"},
-    "智驾": {"bull": "智驾催化密集，观察电动车电池与机器人 ETF", "bear": "智驾退潮，降低高波动主题暴露", "neutral": "智驾分化，等待政策落地"},
+    "智驾": {"bull": "智驾催化密集，观察电动车电池与港美机器人 ETF", "bear": "智驾退潮，降低高波动主题暴露", "neutral": "智驾分化，等待政策落地"},
     "地产": {"bull": "地产政策托底，比较 REIT 与地产美元债 ETF", "bear": "地产承压，留意信用与利率双重风险", "neutral": "地产观望，看销售与信用数据"},
     "消费": {"bull": "消费修复，观察消费主题与中国宽基 ETF", "bear": "消费疲软，降低可选消费暴露", "neutral": "消费轮动，关注必选消费韧性"},
-    "航天": {"bull": "商业航天催化，使用 AI 与纳指 ETF 作为间接代理", "bear": "航天主题退潮，防题材回落", "neutral": "港股暂无纯商业航天 ETF，以代理组合观察"},
+    "东盟": {"bull": "东盟产业链转移升温，观察马来西亚大型股与港美科技组合", "bear": "东盟资金流出，降低单一市场暴露", "neutral": "东盟主题分化，先看马来西亚大型股能否企稳"},
+    "航天": {"bull": "商业航天催化，使用全球未来科技与纳指 ETF 作为间接代理", "bear": "航天主题退潮，防题材回落", "neutral": "港股暂无纯商业航天 ETF，以代理组合观察"},
 }
 
 _HEATMAP_INDICATORS = [
@@ -1922,7 +2008,8 @@ def analyze_keyword_heatmap(brief: dict, top_n: int = 40) -> dict:
             "top_pressure": [],
             "headline": "当日样本中暂无关键词命中（投资主线词库均未命中），热力图等待数据刷新，不做无依据推演。",
             "indicators": _HEATMAP_INDICATORS,
-            "note": "热力图基于投资主线词库（AI/光通信/半导体/贵金属/汇率等）按标题命中统计，零命中时不展示热力。",
+            "new_listings": hk_etf_new_listings(),
+            "note": "热力图基于投资主线词库（AI/光通信/半导体/贵金属/汇率/东盟等）按标题命中统计，零命中时不展示热力。",
         }
 
     # 4) 热度归一
@@ -1962,6 +2049,7 @@ def analyze_keyword_heatmap(brief: dict, top_n: int = 40) -> dict:
         display = entry["keyword"]
         etf_pair = hk_etf_pair(display, tag)
         etf_pair_text = _hk_etf_pair_text(etf_pair)
+        etf_counters_text = _hk_etf_pair_counter_text(etf_pair)
         concept = f"港股 ETF 双标的：{etf_pair[0]['code']} × {etf_pair[1]['code']}"
         hint = (_heatmap_hint(tag, sentiment_label)
                 + f"；组合仅作主题观察：{etf_pair[0]['code']} + {etf_pair[1]['code']}")
@@ -1996,6 +2084,8 @@ def analyze_keyword_heatmap(brief: dict, top_n: int = 40) -> dict:
             "concept": concept,
             "etf_pair": etf_pair,
             "etf_pair_text": etf_pair_text,
+            "etf_counters_text": etf_counters_text,
+            "etf_has_multi_counter": bool(etf_counters_text),
             "mentions": mentions,
             "sources": sources_cnt,
             "bull": bull,
@@ -2074,7 +2164,8 @@ def analyze_keyword_heatmap(brief: dict, top_n: int = 40) -> dict:
         "top_pressure": top_pressure,
         "headline": headline,
         "indicators": _HEATMAP_INDICATORS,
-        "note": "指标口径：热度=提及×(1+ln(跨源+1))归一；情绪=(多-空)/信号；爆发=热度×|情绪|；分歧=1-|情绪|；资金倾向由情绪与热度推断。每个关键词固定给出两个港交所现有 ETF 及对应指数；没有纯主题产品时明确标注代理。线索列表（标题/来源/时间/情绪标签）不展示，仅统计信号，不构成投资建议。",
+        "new_listings": hk_etf_new_listings(),
+        "note": "指标口径：热度=提及×(1+ln(跨源+1))归一；情绪=(多-空)/信号；爆发=热度×|情绪|；分歧=1-|情绪|；资金倾向由情绪与热度推断。每个关键词固定给出两个港交所现有 ETF 及对应指数；没有纯主题产品时明确标注代理。多柜台产品同时标注 HKD / CNY / USD 柜台。线索列表（标题/来源/时间/情绪标签）不展示，仅统计信号，不构成投资建议。",
     }
 
 
@@ -5260,6 +5351,9 @@ def build_html(
                 f'<div class="txt">{headline_hm}</div>'
                 f'<div style="margin:6px 0;color:{ink};font-size:11px;"><span class="{bias_cls}">{_esc(overall_bias)}</span> '
                 f'<span class="sub">Top 4：{top_line}</span></div>'
+                f'<div style="margin:4px 0;color:{ink};font-size:10px;">新纳入 ETF：'
+                f'{_esc(" / ".join(str(x.get("code") or "").replace(".HK", "") for x in (heatmap.get("new_listings") or [])))}'
+                f'<span class="sub">（3599·3566·3585·3197 设 HKD/CNY/USD 多柜台）</span></div>'
                 f'<div class="ftr">完整热力网格（{total_hit} 词 × 9 维指标）在 <span class="hl">/api/heatmap</span> 可查；线索列表不展示，仅统计信号，不作为投资依据。</div></div>'
             )
         limit = 24 if level >= 2 else 12
@@ -5297,6 +5391,9 @@ def build_html(
                 concept = _esc(kw.get("concept") or kw.get("tag") or "")
                 pair_detail = _esc(kw.get("etf_pair_text") or "")
                 hint = _esc(kw.get("hint") or "")
+                counters_text = _esc(kw.get("etf_counters_text") or "")
+                counters_html = (f'<div style="font-size:9px;color:{muted};margin-top:2px;line-height:1.35;">'
+                                 f'多柜台：{counters_text}</div>') if counters_text else ""
                 # 线索列表不展示：格子只保留信号计数（标题/来源/时间“当日”/情绪标签 利好/利空/中性 不再列出）
                 ev_html = f'<div class="ev">信号 {kw.get("bull",0)}:{kw.get("bear",0)} · 线索列表不展示</div>'
                 cell = (
@@ -5305,6 +5402,7 @@ def build_html(
                     f'<span style="color:{muted};font-size:10px;">{_esc(kw.get("tag") or "")}</span></div>'
                     f'<div style="font-size:10px;color:{muted};margin-top:1px;"><b>{concept}</b></div>'
                     f'<div style="font-size:9px;color:{muted};margin-top:2px;line-height:1.35;">{pair_detail}</div>'
+                    f'{counters_html}'
                     f'<div style="height:6px;background:#ececec;border-radius:3px;margin:5px 0;overflow:hidden;"><div style="height:100%;width:{heat}%;background:{bar_color};border-radius:3px;"></div></div>'
                     f'<div style="font-size:10px;color:{ink};line-height:1.5;"><b>{_esc(heat_label)}</b>·热度<b>{heat}</b>｜情绪<b>{_esc(sentiment_label)}</b>（净{kw.get("net",0):+d}）｜{kw.get("sources",0)}源·{kw.get("mentions",0)}条</div>'
                     f'<div style="margin-top:4px;">'
@@ -5347,18 +5445,34 @@ def build_html(
                 parts.append(f'<span class="tag-d">承压</span> {"、".join(_esc(k.get("keyword") or "") for k in press[:2])}')
             if parts:
                 top_html = f'<div style="margin-top:6px;color:{ink};font-size:11px;">{"　".join(parts)}</div>'
+        # 本版新纳入的 8 只港交所 ETF（含多柜台），让读者在热力图头部直接看到产品池。
+        new_items = heatmap.get("new_listings") or []
+        new_html = ""
+        if level >= 1 and new_items:
+            codes_line = " / ".join(_esc(str(item.get("code") or "").replace(".HK", "")) for item in new_items)
+            multi_line = "、".join(
+                f'{_esc(str(item.get("code") or "").replace(".HK", ""))}（{_esc("/".join(item.get("counters", {}).keys()))}）'
+                for item in new_items if item.get("multi_counter")
+            )
+            new_html = (
+                f'<div style="border:1px dashed {rule};border-radius:6px;padding:6px;margin:6px 0;'
+                f'background:{paper};font-size:10px;color:{ink};line-height:1.5;">'
+                f'<b>本版新纳入 {len(new_items)} 只港交所 ETF</b>：{codes_line}'
+                f'<div class="sub">多柜台：{multi_line}；已映射进下方热力格子</div></div>'
+            )
         return (
             f'<div class="card"><div class="hdr"><span class="tag">AI 情绪热力图</span>'
             f'<span class="sub">{total_hit} 个关键词 · {total_mentions} 条线索 · 信号 {total_signals} 条</span></div>'
             f'<div class="txt">{headline_hm}</div>'
             f'<div style="margin:6px 0;"><span class="{bias_cls}">{_esc(overall_bias)}</span> '
             f'<span class="sub">{total_hit} 词命中 · {"跨源≥4为确认信号，1-2源为噪音" if level>=1 else ""}</span></div>'
+            f'{new_html}'
             f'{top_html}'
             f'<table class="tbl" style="margin-top:6px;">{"".join(rows)}</table>'
             f'<table class="tbl-sub" style="margin-top:8px;">'
             f'<tr><td colspan="2" class="td-hdr"><span class="tag">投资级指标说明</span> <span class="sub">9 维量化 · 阈值写死可复算</span></td></tr>'
             f'{ind_rows}</table>'
-            f'<div class="ftr">每个格子=一个投资关键词并固定附两个港交所现有 ETF 及对应指数；无纯主题产品时明确标注代理。热度深浅=关注度，颜色=情绪方向；线索列表不展示（完整数据在 /api/heatmap）；{"热度>75为沸腾需防拥挤，" if level>=1 else ""}仅统计信号，不作为投资依据。</div></div>'
+            f'<div class="ftr">每个格子=一个投资关键词并固定附两个港交所现有 ETF 及对应指数（多柜台产品同时标注 HKD / CNY / USD 柜台）；无纯主题产品时明确标注代理。热度深浅=关注度，颜色=情绪方向；线索列表不展示（完整数据在 /api/heatmap）；{"热度>75为沸腾需防拥挤，" if level>=1 else ""}仅统计信号，不作为投资依据。</div></div>'
         )
 
     # ── 「AI 政策深度」/「AI 政策研报」两张卡片：政策法规知识库检索（RAG）+ 修饰词术语口径 +

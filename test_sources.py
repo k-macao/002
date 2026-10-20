@@ -478,6 +478,64 @@ class HKEtfPairTest(unittest.TestCase):
         self.assertEqual(len(entry["etf_pair"]), 2)
         self.assertIn("对应标的：", entry["etf_pair_text"])
 
+    def test_new_listings_cover_eight_products(self):
+        items = sources.hk_etf_new_listings()
+        self.assertEqual([item["code"] for item in items], list(sources._HK_ETF_NEW_LISTINGS))
+        self.assertEqual(len(items), 8)
+        for item in items:
+            self.assertIn(item["code"], sources._HK_ETF_CATALOG)
+            self.assertTrue(item["name"])
+            self.assertTrue(item["benchmark"])
+            self.assertEqual(item["counters"]["HKD"], item["code"])
+            self.assertIn("HKD", item["counter_text"])
+
+    def test_every_new_listing_is_reachable_from_heatmap_pairs(self):
+        used = set()
+        for tag, keywords in sources._THEMES:
+            used.update(x["code"] for x in sources.hk_etf_pair("", tag))
+            for raw in keywords:
+                keyword = sources._heatmap_display(raw)
+                used.update(x["code"] for x in sources.hk_etf_pair(keyword, tag))
+        for code in sources._HK_ETF_NEW_LISTINGS:
+            self.assertIn(code, used, f"{code} 未进入任何热力图双标的")
+
+    def test_multi_counter_codes_exposed(self):
+        pair = sources.hk_etf_pair("光通信", "光通信")
+        self.assertEqual([x["code"] for x in pair], ["03599.HK", "03191.HK"])
+        self.assertEqual(pair[0]["counters"],
+                         {"HKD": "03599.HK", "CNY": "83599.HK", "USD": "41599.HK"})
+        self.assertTrue(pair[0]["multi_counter"])
+        self.assertFalse(pair[1]["multi_counter"])
+        self.assertEqual(pair[1]["counters"], {"HKD": "03191.HK"})
+        self.assertEqual(sources._hk_etf_pair_counter_text(pair),
+                         "03599.HK：HKD 03599.HK / CNY 83599.HK / USD 41599.HK")
+        # 3197 的美元柜台是 4 位数 9197，按港交所 5 位写法存储。
+        self.assertEqual(sources.hk_etf_counters("03197.HK")["USD"], "09197.HK")
+
+    def test_heatmap_exposes_new_listings_and_counters(self):
+        heatmap = sources.analyze_keyword_heatmap({"金十数据": [
+            {"title": "光模块订单暴增，光通信景气度回升", "url": ""},
+            {"title": "马来西亚交易所大型股走强，东盟资金流入", "url": ""},
+        ]})
+        self.assertEqual(len(heatmap["new_listings"]), 8)
+        keywords = {kw["keyword"]: kw for kw in heatmap["keywords"]}
+        self.assertIn("光通信", keywords)
+        self.assertEqual([x["code"] for x in keywords["光通信"]["etf_pair"]],
+                         ["03599.HK", "03191.HK"])
+        self.assertIn("CNY 83599.HK", keywords["光通信"]["etf_counters_text"])
+        self.assertIn("东盟", keywords)
+        self.assertEqual([x["code"] for x in keywords["东盟"]["etf_pair"]],
+                         ["03143.HK", "03599.HK"])
+
+    def test_build_html_heatmap_shows_new_etf_pool(self):
+        out = sources.build_html({"金十数据": [
+            {"title": "光模块订单暴增，光通信景气度回升", "url": ""},
+        ]})
+        heatmap = out[out.index("AI 情绪热力图"):out.index("AI 政策分析")]
+        self.assertIn("本版新纳入 8 只港交所 ETF", heatmap)
+        self.assertIn("03599", heatmap)
+        self.assertIn("CNY 83599.HK", heatmap)
+
 
 class SectorOpportunityTest(unittest.TestCase):
     """「AI 板块机会」板块：机会方向（净多头 Top 4）/ 承压方向（净空头 Top 2）+ 支撑证据。"""

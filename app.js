@@ -80,6 +80,7 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
   const pillEl=document.getElementById('heatmapPill');
   const footEl=document.getElementById('heatmapFoot');
   const filtersEl=document.getElementById('heatmapFilters');
+  const poolEl=document.getElementById('heatmapEtfPool');
   if(!gridEl || !headlineEl) return;
 
   let heatmapData=null;
@@ -138,6 +139,30 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
     indicatorsEl.innerHTML=title+grid+note;
   }
 
+  // 本版新纳入的港股 ETF 产品池：多柜台产品直接列出 HKD / CNY / USD 代码。
+  function renderEtfPool(items){
+    if(!poolEl) return;
+    if(!Array.isArray(items) || !items.length){
+      poolEl.hidden=true;
+      poolEl.innerHTML='';
+      return;
+    }
+    const chips=items.map(etf=>{
+      const counters=etf.counters||{HKD:etf.code};
+      const counterText=Object.keys(counters).map(c=>`${c} ${counters[c].replace('.HK','')}`).join(' · ');
+      return `<span class="etf-chip${Object.keys(counters).length>1?' multi':''}" title="${esc(etf.name)}｜对应标的：${esc(etf.benchmark)}">
+        <b>${esc((etf.code||'').replace('.HK',''))}</b>
+        <span class="etf-chip-name">${esc(trunc(etf.name,22))}</span>
+        <small>${esc(counterText)}</small>
+      </span>`;
+    }).join('');
+    poolEl.innerHTML=`<div class="etf-pool-head"><span class="kicker">NEW LISTINGS</span>
+      <b>本版新纳入 ${items.length} 只港交所 ETF</b>
+      <span>（${items.filter(x=>(x.counters&&Object.keys(x.counters).length>1)).length} 只设多柜台，已映射进下方热力格子）</span></div>
+      <div class="etf-pool-chips">${chips}</div>`;
+    poolEl.hidden=false;
+  }
+
   function renderMeta(data){
     if(!metaEl) return;
     const totalTitles=data.total_titles!=null ? data.total_titles : (data.keywords||[]).reduce((s,k)=>s+k.mentions,0);
@@ -173,7 +198,7 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
     const etfPair=Array.isArray(kw.etf_pair) ? kw.etf_pair : [];
     const etfPairHtml=etfPair.length===2 ? `
       <div class="etf-pair" aria-label="港股 ETF 双标的">
-        ${etfPair.map((etf,index)=>`<div class="etf-leg"><span class="etf-no">0${index+1}</span><div><b>${esc(etf.code)}</b> ${esc(etf.name)}<small>对应标的：${esc(etf.benchmark)}</small></div></div>`).join('')}
+        ${etfPair.map((etf,index)=>`<div class="etf-leg"><span class="etf-no">0${index+1}</span><div><b>${esc(etf.code)}</b> ${esc(etf.name)}<small>对应标的：${esc(etf.benchmark)}</small>${etf.multi_counter?`<small>多柜台：${esc(etf.counter_text||'')}</small>`:''}</div></div>`).join('')}
         <div class="etf-mapping">映射口径：${esc(etfPair[0].mapping||'主题相关指数')} · 仅作主题观察，不构成投资建议</div>
       </div>` : `<div class="etf-pair"><div class="etf-mapping">港股 ETF 双标的数据暂不可用</div></div>`;
     drawerEl.hidden=false;
@@ -261,6 +286,10 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
       const badgeRating=ratingBadge(kw.rating);
       const flowCls=kw.flow==='流入'?'flow-in':kw.flow==='流出'?'flow-out':'neutral';
       const barCls=barClass(kw.sentiment);
+      const etfPair=Array.isArray(kw.etf_pair)?kw.etf_pair:[];
+      const etfLine=etfPair.length===2
+        ? `<div class="cell-etf"><span>ETF</span> <b>${esc(etfPair[0].code.replace('.HK',''))}</b> · <b>${esc(etfPair[1].code.replace('.HK',''))}</b>${kw.etf_counters_text?'<em>多柜台</em>':''}</div>`
+        : '';
       // store payload for filtering & drawer (stringified)
       const payload=JSON.stringify({keyword:kw.keyword,sentiment_label:kw.sentiment_label,heat:kw.heat,rating:kw.rating});
       return `
@@ -282,6 +311,7 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
             <span class="badge ${flowCls}">${esc(kw.flow)}</span>
             <span class="badge ${riskBadge(kw.risk)}">风险${esc(kw.risk)}</span>
           </div>
+          ${etfLine}
           <div class="cell-reading" title="${esc(kw.reading)}">${esc(kw.reading)}</div>
         </button>`;
     }).join('');
@@ -306,6 +336,7 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
     if(headlineEl) headlineEl.textContent=data.headline||'—';
     // if headline contains keyword names, highlight? keep plain for now, but escape already
     renderMeta(data);
+    renderEtfPool(data.new_listings);
     renderGrid(data);
     renderIndicators(data.indicators);
     if(footEl){
