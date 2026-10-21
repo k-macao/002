@@ -5844,7 +5844,6 @@ f'<div class="ftr">近30日只统计已核验发文日的全球政策，已观�
             + policy_card
             + policy_deep_cards
             + opportunities_card
-            + _news_card(per_source)
             + f'<div style="margin:8px 0 0;color:{muted};font-size:10px;text-align:center;">数据仅供参考，不构成投资建议</div>'
             + f'<div style="margin:6px 0 0;padding:6px 4px 0;border-top:1px solid {rule};color:{ink};font-size:10px;text-align:center;font-weight:700;">{_esc(author)}</div>'
             + '</div>'
