@@ -144,7 +144,7 @@ def main():
 
     payload = {
         "token": token,
-        "title": "章鱼 AI·全景分析（对冲组合量化策略）",
+        "title": "章鱼 AI·全景分析（对冲组合002）",
         "content": build_content(datetime.now(), review=sources.analyze_ashare(market), brief=brief),
         "template": "html",
     }
