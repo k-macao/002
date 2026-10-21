@@ -327,7 +327,7 @@ class Handler(SimpleHTTPRequestHandler):
 
         payload = {
             "token": token,
-            "title": "章鱼 AI·全景分析（市场情绪量化分析）",
+            "title": "章鱼 AI·全景分析（对冲组合量化策略）",
             "content": content,
             "template": "html",
         }
