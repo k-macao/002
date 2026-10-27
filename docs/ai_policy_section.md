@@ -14,6 +14,8 @@
 |---|---|
 | `policy_impact.py` · `analyze_policy_market_impact()` | **「AI 政策深度」主问题**：近 30 日新发文 + 仍在生效的存量政策对 A股 / 港股 / 美股的影响。三层分开计分（新发文全额 / 存量半权 / 已到期不计），指数分可复算；已观测与机制推演分开 |
 | `policy_impact.py` · `page_section_html()` | 页面区块由同一份 `impact` 生成，静态快照与实时结果结构一致，不再手写维护 |
+| `policy_impact.py` · `fetch_official()` / `OFFICIAL_SOURCES` | 官方源头抓取与逐源核实：11 个机构入口，能抓的抓、只登记入口的如实标，抓不到写失败原因（见〇.六） |
+| `.github/workflows/policy-ledger.yml` | 每日 09:10（北京时间）抓官方源 → 写 `policy_ledger_cache.json` → 重生成静态页政策段并提交 |
 | `sources.py` · `analyze_policy()` | 政策引擎：8 个政策维度热度 + 多空方向 + 鹰鸽取向 + 支撑新闻；始终附带 `market_impact`。`deep=True`（默认）再叠加下面 ②-⑦ 的对照层 |
 | `sources.py` · `_POLICY_KB` / `retrieve_policy_context()` / `policy_knowledge()` | ①政策法规知识库（RAG）：检索历史政策 → 与新信号对比分析 |
 | `sources.py` · `interpret_policy_modifiers()` | ③政策修饰词的经济学 + 法学双维解读（`_POLICY_MODIFIERS` 术语库） |
@@ -26,7 +28,7 @@
 | `sources.py` · `build_html()` | 推送卡片：「AI 政策分析」+「AI 政策深度」+「AI 政策研报」，排在「AI 每日总结 → AI 看盘 → AI 情绪热力图」之后 |
 | `index.html` | 页面板块 `AI POLICY` / `AI POLICY DEEP` / `AI POLICY RESEARCH`（在 `AI WATCH` 看盘、`AI HEATMAP` 热力图之后） |
 | `server.py` | `GET /api/policy`（`?deep=0` 不跑模型，仍返回近30日 `market_impact`） |
-| `test_sources.py` | `PolicySectionTest` / `PolicyMarketImpactTest` / `PolicyKnowledgeBaseTest` / `PolicyModifierTest` / `PolicySentimentTest` / `PolicyGraphTest` / `PolicyReasoningTest` / `PolicyModelTest` / `PolicyDeepWiringTest` |
+| `test_sources.py` | `PolicyOfficialSourceTest` / `PolicySectionTest` / `PolicyMarketImpactTest` / `PolicyKnowledgeBaseTest` / `PolicyModifierTest` / `PolicySentimentTest` / `PolicyGraphTest` / `PolicyReasoningTest` / `PolicyModelTest` / `PolicyDeepWiringTest` |
 | `test_server.py` | `GET /api/policy` 响应结构 + 推送内容含政策三张卡片且位置在「AI 板块机会」之前 |
 
 口径：政策维度标签见 `sources._POLICY_BUCKETS`；鹰鸽词库见 `_HAWKISH` / `_DOVISH`（否定前缀
@@ -83,6 +85,69 @@
 ```
 
 `state` 取 `window` / `carry` / `empty`：页面与推送据此切换文案，不再用一句话覆盖三种情形。
+
+---
+
+## 〇.六、官方源头与「数据是不是新的」
+
+台账（`_POLICY_RELEASES`）是人工核过的发文，窗口一滚动就会变空——2026-10-28 时窗口内 0 条，
+最近一条发文是 2026-09-20。**只靠台账，卡片会一直说「没有新政策」，而现实里央行、美联储、
+财政部每天都在发东西。** 所以数据层加了两条独立通道：
+
+### 1. 官方源抓取（`fetch_official()`）
+
+`OFFICIAL_SOURCES` 登记 11 个机构，字段 `key / issuer / jurisdiction / domain / entry / mode / note`：
+
+| 模式 | 源 | 说明 |
+|---|---|---|
+| `html` | 美联储 `federalreserve.gov/newsevents/pressreleases.htm`、欧洲央行 `ecb.europa.eu/press/html/index.en.html`、日本央行 `boj.or.jp/en/mopo/mpmdeci/index.htm`、美国财政部 `home.treasury.gov/news/press-releases` | 抓列表页，锚文本要像发文、链接必须落在该机构官方域名下、日期取「本条锚点 → 下一条锚点」之间（否则会把下一条的日期安到这一条头上），导航 / 关于我们 / 订阅类链接丢弃 |
+| `manual` | 中国政府网 `gov.cn/zhengce/`、人民银行、证监会、住房城乡建设部、金融监管总局、财政部、发改委 | **只登记入口，不臆造深层文件链接**，靠人工核对后写进台账 |
+
+- 每个源都给状态：`ok`（抓到 N 条）/ `empty`（抓通但窗口内没有新条目）/ `error`（附异常类型与前 160 字）/
+  `manual`（只登记入口）。**一个源都没抓通时，卡片如实写「尚未抓取」，不拿旧条目冒充今天。**
+- 抓到的条目（`auto_releases`）只列**不计分**：`dir=0`、方向留空、`summary` 写明「影响方向待标注」。
+  官方发了什么是抓取能证明的，「对市场是利好还是利空」是编辑判断，不自动编。
+- 与台账去重（`dedupe_auto()`）：同一天 + 同维度或标题 4 字切片重合的，不重复列。
+
+### 2. 当日官方源动态（`official_daily_candidates()`）
+
+现有新闻管线里来自国务院 / 部委 / 央行 / 美联储等官方源的标题，标成**待核验发文**列出。
+快讯日期不等于发文日，所以这批**不入台账、不计分**，只提示「官方源今天说了这些，核到原文再入库」。
+
+### 3. 缓存与刷新（不再请求路径打外网）
+
+- `policy_ledger_cache.json`：抓取结果落盘，TTL 36 小时；`load_official_cache()` 过期即返回 `None`，
+  宁可显示「尚未抓取」也不拿一周前的条目冒充今天。
+- 手动刷新：`python3 policy_impact.py --refresh`（加 `--write` 才写缓存；`ok=0` 时不覆盖旧缓存）。
+- 定时刷新：`.github/workflows/policy-ledger.yml`，每日 01:10 UTC（09:10 北京时间）跑一次，
+  写缓存 + `python3 policy_impact.py --render-index index.html` 重生成静态页政策段并提交。
+- 静态页：`--render-index` 整段替换 `id="policyDeepSection"`，页面与 `/api/policy` 用同一份渲染函数。
+
+### 4. 来源核实（`verification_report()` / `impact["official"]["entries"]`）
+
+台账 11 条**全部**挂官方入口，并标 `source_kind`：`官方原文` / `媒体转述`。
+当前 11 条的引用链接都是 `news.qq.com` / `politico.com` 等媒体转述（`官方原文 0、媒体转述 11`），
+卡片照写，不把媒体转述说成官方原文。核验命令：`python3 policy_impact.py --verify`。
+
+页面只显示一行数字：「官方入口 11 个｜抓通 x · 空 y · 失败 z · 仅入口 7｜抓取 YYYY-MM-DD HH:MM UTC｜
+窗口内新发文 n 条｜台账 11 条：官方原文 0、媒体转述 11」，失败源另起一行列机构名。
+不写操作提示、不写说明段落（与「说明 / 注释类文字全文隐藏」的要求一致）。
+
+### 5. 新增字段（`market_impact`）
+
+```json
+{
+  "counts": {"ledger": 11, "official_entries": 0, "media_entries": 11, "auto": 0, "candidates": 0},
+  "auto_releases": [{"date": "2026-10-20", "issuer": "美联储 FOMC", "title": "...", "days_ago": 8,
+                     "source": "https://www.federalreserve.gov/...", "dimension": "货币政策 · 美联储"}],
+  "official": {"available": true, "registered": 11, "ok": 4, "empty": 0, "error": 0, "manual": 7,
+               "fetched_at": "2026-10-28 01:10", "cache_age_hours": 3.2,
+               "display": "官方入口 11 个｜抓通 4 · 空 0 · 失败 0 · 仅入口 7｜...",
+               "failed": [], "entries": [{"id": "FED-HIKE-20260916", "domain": "www.federalreserve.gov",
+                                          "entry": "https://...", "source_kind": "媒体转述", "status": "ok"}]},
+  "official_candidates": [{"title": "国务院办公厅关于印发...", "source": "国务院政策发布", "status": "待核验发文"}]
+}
+```
 
 ---
 

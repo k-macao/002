@@ -10,11 +10,76 @@ A 股 / 港股 / 美股。台账只收有公开来源的发布、讲话信号和
 """
 from __future__ import annotations
 
+import html as _html
+import json
+import os
 import re
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+from urllib.request import Request, urlopen
 
 POLICY_WINDOW_DAYS = 30
 POLICY_MARKETS = ("A股", "港股", "美股")
+
+# ---------------------------------------------------------------- 官方源头登记
+# 台账条目最终要能指回「谁发的、发在哪」。这一节只登记**机构官方站点与入口页**，
+# 不臆造具体文件链接：文件链接由抓取解析得到，解析不到就如实标「待核对」。
+# ``mode``：
+#   rss   —— 官方 RSS，可直接解析条目；
+#   html  —— 官方列表页，按锚文本 + 日期解析；
+#   manual—— 只登记入口，靠人工 / Agent 核对（政府站常无稳定 RSS，反爬也重）。
+OFFICIAL_SOURCES = [
+    {"key": "sc", "issuer": "国务院", "jurisdiction": "中国",
+     "domain": "www.gov.cn", "entry": "https://www.gov.cn/zhengce/", "mode": "manual",
+     "note": "中国政府网 · 政策文件库（国务院常务会议、国发 / 国办发文件）"},
+    {"key": "pbc", "issuer": "中国人民银行", "jurisdiction": "中国",
+     "domain": "www.pbc.gov.cn", "entry": "http://www.pbc.gov.cn", "mode": "manual",
+     "note": "人民银行 · 公告 / 货币政策 / 新闻发布"},
+    {"key": "csrc", "issuer": "中国证监会", "jurisdiction": "中国",
+     "domain": "www.csrc.gov.cn", "entry": "http://www.csrc.gov.cn", "mode": "manual",
+     "note": "证监会 · 新闻发布 / 规章 / 征求意见"},
+    {"key": "mohurd", "issuer": "住房城乡建设部", "jurisdiction": "中国",
+     "domain": "www.mohurd.gov.cn", "entry": "https://www.mohurd.gov.cn", "mode": "manual",
+     "note": "住建部 · 政策发布 / 规范性文件"},
+    {"key": "nfra", "issuer": "国家金融监督管理总局", "jurisdiction": "中国",
+     "domain": "www.nfra.gov.cn", "entry": "https://www.nfra.gov.cn", "mode": "manual",
+     "note": "金融监管总局 · 规章 / 通知"},
+    {"key": "mof", "issuer": "财政部", "jurisdiction": "中国",
+     "domain": "www.mof.gov.cn", "entry": "https://www.mof.gov.cn", "mode": "manual",
+     "note": "财政部 · 财政政策 / 国债 / 专项债"},
+    {"key": "ndrc", "issuer": "国家发展改革委", "jurisdiction": "中国",
+     "domain": "www.ndrc.gov.cn", "entry": "https://www.ndrc.gov.cn", "mode": "manual",
+     "note": "发改委 · 产业政策 / 项目审批"},
+    {"key": "fed", "issuer": "美联储 FOMC", "jurisdiction": "美国",
+     "domain": "www.federalreserve.gov",
+     "entry": "https://www.federalreserve.gov/newsevents/pressreleases.htm", "mode": "html",
+     "note": "Federal Reserve · Press Releases（议息声明 / 讲话 / 监管公告）"},
+    {"key": "ecb", "issuer": "欧洲央行", "jurisdiction": "欧元区",
+     "domain": "www.ecb.europa.eu", "entry": "https://www.ecb.europa.eu/press/html/index.en.html",
+     "mode": "html", "note": "ECB · Press（货币政策决定 / 行长讲话）"},
+    {"key": "boj", "issuer": "日本央行", "jurisdiction": "日本",
+     "domain": "www.boj.or.jp", "entry": "https://www.boj.or.jp/en/mopo/mpmdeci/index.htm",
+     "mode": "html", "note": "Bank of Japan · Monetary Policy Decisions"},
+    {"key": "ust", "issuer": "美国财政部", "jurisdiction": "美国",
+     "domain": "home.treasury.gov", "entry": "https://home.treasury.gov/news/press-releases",
+     "mode": "html", "note": "U.S. Treasury · Press Releases（国债 / 回购 / 制裁）"},
+]
+
+# 台账 issuer 字符串 → 登记表 key（按顺序做包含匹配，先到先得）。
+_ISSUER_KEYS = [
+    ("金融监管总局", "nfra"), ("住房城乡建设部", "mohurd"), ("自然资源部", "mohurd"),
+    ("中国人民银行", "pbc"), ("证监会", "csrc"), ("财政部", "mof"),
+    ("美联储", "fed"), ("欧洲央行", "ecb"), ("日本央行", "boj"),
+    ("美国财政部", "ust"), ("国务院", "sc"),
+]
+_BY_KEY = {item["key"]: item for item in OFFICIAL_SOURCES}
+_OFFICIAL_HOSTS = tuple(item["domain"] for item in OFFICIAL_SOURCES)
+
+OFFICIAL_TIMEOUT = float(os.environ.get("POLICY_SOURCE_TIMEOUT", "10"))
+OFFICIAL_ITEMS_PER_SOURCE = 12
+OFFICIAL_LOOKBACK_DAYS = 45
+CACHE_PATH = Path(__file__).with_name("policy_ledger_cache.json")
+CACHE_TTL_HOURS = 36
 
 # 类型权重：正式发布全额；讲话 / 指引只是信号；窗口内生效的是更早发文的实施，不重复计为新发文。
 _KIND_WEIGHT = {"发布": 1.0, "信号": 0.65, "生效": 0.75}
@@ -300,6 +365,327 @@ _POLICY_RELEASES = [
 ]
 
 
+# ---------------------------------------------------------------- 官方源抓取与核实
+UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
+
+# 测试注入点：默认走 urllib，离线环境 / 单测里换成假函数。
+GET_TEXT = None
+
+
+def _http_text(url: str, timeout: float | None = None) -> str:
+    request = Request(url, headers={"User-Agent": UA, "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"})
+    with urlopen(request, timeout=timeout or OFFICIAL_TIMEOUT) as response:
+        raw = response.read()
+    for charset in ("utf-8", "gb18030"):
+        try:
+            return raw.decode(charset)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", "replace")
+
+
+def _get_text(url: str) -> str:
+    getter = GET_TEXT or _http_text
+    return getter(url)
+
+
+def official_source_for(issuer: str) -> dict | None:
+    """台账 issuer → 官方入口。匹配不到返回 None（不硬塞一个不相关的机构）。
+
+    多部门联合发文（如「中国人民银行 / 金融监管总局」）取**字符串里最先出现**的机构，
+    所以「美国财政部」不会被「财政部」抢走、联合发文也不会挂到次要部门名下。
+    """
+    text = str(issuer or "")
+    best = None
+    for needle, key in _ISSUER_KEYS:
+        index = text.find(needle)
+        if index < 0:
+            continue
+        rank = (index, -len(needle))
+        if best is None or rank < best[0]:
+            best = (rank, key)
+    return dict(_BY_KEY[best[1]]) if best else None
+
+
+def official_host(url: str) -> str:
+    host = re.sub(r"^[a-z]+://", "", str(url or "").strip().lower())
+    return host.split("/")[0].split(":")[0]
+
+
+def is_official_url(url: str) -> bool:
+    """是否落在登记过的官方域名下（含子域）。用于把「官方原文」和「媒体转述」分开。"""
+    host = official_host(url)
+    return bool(host) and any(host == domain or host.endswith("." + domain) for domain in _OFFICIAL_HOSTS)
+
+
+def source_kind(url: str) -> str:
+    return "官方原文" if is_official_url(url) else "媒体转述"
+
+
+_DATE_PATTERNS = [
+    (re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})"), "ymd"),
+    (re.compile(r"(\d{4})/(\d{1,2})/(\d{1,2})"), "ymd"),
+    (re.compile(r"(\d{4})年(\d{1,2})月(\d{1,2})日"), "ymd"),
+    (re.compile(r"(\d{4})\.(\d{1,2})\.(\d{1,2})"), "ymd"),
+]
+_MONTHS = {name: index for index, name in enumerate(
+    ("january", "february", "march", "april", "may", "june", "july", "august",
+     "september", "october", "november", "december"), 1)}
+_EN_DATE = re.compile(
+    r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})", re.I)
+# RSS 的 pubDate 是 RFC 822 格式（Fri, 16 Oct 2026 13:45:00 +0200），日期在前、月份在中间。
+_EN_DATE_DMY = re.compile(
+    r"(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?,?\s+(\d{4})", re.I)
+
+
+def parse_date(text: str) -> str:
+    """从一段文本里取第一个合法日期，返回 YYYY-MM-DD；取不到返回空串。"""
+    raw = str(text or "")
+    for pattern, _ in _DATE_PATTERNS:
+        match = pattern.search(raw)
+        if match:
+            try:
+                return date(int(match.group(1)), int(match.group(2)), int(match.group(3))).isoformat()
+            except ValueError:
+                continue
+    match = _EN_DATE_DMY.search(raw)
+    if match:
+        month = _MONTHS.get(next((name for name in _MONTHS if name.startswith(match.group(2).lower())), ""), 0)
+        if month:
+            try:
+                return date(int(match.group(3)), month, int(match.group(1))).isoformat()
+            except ValueError:
+                return ""
+    match = _EN_DATE.search(raw)
+    if match:
+        month = _MONTHS.get(next((name for name in _MONTHS if name.startswith(match.group(1).lower())), ""), 0)
+        if month:
+            try:
+                return date(int(match.group(3)), month, int(match.group(2))).isoformat()
+            except ValueError:
+                return ""
+    return ""
+
+
+def _clean(text: str) -> str:
+    return re.sub(r"\s+", " ", _html.unescape(re.sub(r"<[^>]+>", " ", str(text or "")))).strip()
+
+
+_ANCHOR = re.compile(r'<a\b[^>]*href="([^"]+)"[^>]*>(.*?)</a>', re.I | re.S)
+_RSS_ITEM = re.compile(r"<item\b.*?</item>", re.I | re.S)
+_RSS_FIELD = lambda tag: re.compile(rf"<{tag}\b[^>]*>(.*?)</{tag}>", re.I | re.S)
+# 列表页里的导航 / 关于我们 / 订阅入口也有日期，但不是发文，一律丢掉。
+_NAV_HINTS = ("about", "contact", "career", "sitemap", "search", "faq", "privacy",
+              "accessibility", "subscribe", "login", "signin", "newsletter", "cookie")
+# 列表页 URL 里出现这些片段，就当是发文入口（美国财政部很多标题不带「政策 / 通知」字样）。
+_POLICY_URL_HINTS = ("press", "news", "statement", "monetary", "decision", "policy",
+                     "announce", "release", "sanction", "date/")
+_POLICY_HINT = ("政策", "通知", "公告", "决定", "意见", "办法", "规定", "规划", "方案", "措施",
+                "statement", "press release", "decision", "announcement", "policy", "rate",
+                "regulation", "proposal", "minutes", "speech")
+
+
+def parse_rss(xml: str, source: dict) -> list[dict]:
+    """官方 RSS → 条目列表。只取有日期、链接落在官方域名下的条目。"""
+    out = []
+    for chunk in _RSS_ITEM.findall(str(xml or "")):
+        title = _clean(" ".join(_RSS_FIELD("title").findall(chunk)[:1]))
+        link = _clean(" ".join(_RSS_FIELD("link").findall(chunk)[:1]))
+        stamp = parse_date(" ".join(_RSS_FIELD("pubDate").findall(chunk)[:1]) or chunk)
+        if title and link and stamp and is_official_url(link):
+            out.append({"title": title, "url": link, "date": stamp, "source": source["key"]})
+    return out
+
+
+def parse_links(html: str, source: dict) -> list[dict]:
+    """官方列表页 → 条目列表。
+
+    政府 / 央行站点没有统一模板，这里只做保守解析：锚文本要像政策文件，
+    日期取锚文本内或其后 240 个字符里的第一个日期，链接必须落在该机构的官方域名下。
+    解析不到就返回空——宁可这条源标 empty，也不要编一个标题出来。
+    """
+    text = str(html or "")
+    out = []
+    anchors = list(_ANCHOR.finditer(text))
+    for index, match in enumerate(anchors):
+        href, inner = match.group(1), _clean(match.group(2))
+        url = href if href.startswith("http") else ""
+        if not url or not is_official_url(url):
+            continue
+        if len(inner) < 6 or len(inner) > 140:
+            continue
+        low = inner.lower()
+        url_low = url.lower()
+        if not (any(hint in low for hint in _POLICY_HINT)
+                or any(hint in url_low for hint in _POLICY_URL_HINTS)):
+            continue
+        if any(hint in low for hint in _NAV_HINTS) or any(hint in url_low for hint in _NAV_HINTS):
+            continue
+        # 日期只看「本条锚点到下一条锚点之间」：跨条目取日期会把下一条的日期安到这一条头上。
+        stop = anchors[index + 1].start() if index + 1 < len(anchors) else len(text)
+        stamp = parse_date(inner) or parse_date(text[match.end():min(match.end() + 240, stop)])
+        if not stamp:
+            continue
+        out.append({"title": inner, "url": url, "date": stamp, "source": source["key"]})
+    return out
+
+
+_AUTO_RULES = [
+    (("fomc", "federal funds", "联邦基金", "加息", "降息", "target range"), "货币政策 · 美联储", "海外货币收紧"),
+    (("ecb", "欧洲央行", "deposit facility", "拉加德", "lagarde"), "货币政策 · 美联储", "海外货币收紧"),
+    (("boj", "日本央行", "植田", "ueda", "policy rate"), "货币政策 · 美联储", "海外货币收紧"),
+    (("lpr", "mlf", "逆回购", "降准", "降息", "再贷款", "流动性", "公开市场"), "央行 · 流动性", "国内利率按兵不动"),
+    (("房地产", "住房", "房贷", "现房", "预售", "保障房"), "地产与地方政策", "国内地产金融"),
+    (("证监会", "再融资", "ipo", "发行上市", "退市", "并购重组", "减持"), "资本市场监管", "国内金融制度"),
+    (("国债", "回购", "buyback", "赤字", "专项债", "关税", "tariff", "制裁", "sanction"), "财政 · 关税与债务", "美债长端流动性"),
+    (("出口管制", "两用物项", "芯片", "半导体", "人工智能", "ai ", "反倾销"), "产业与科技政策", "科技与产业政策"),
+    (("汇率", "外汇", "人民币", "currency", "exchange rate"), "汇率与外汇干预", "汇率与外汇干预"),
+]
+
+
+def classify_policy(title: str) -> dict:
+    """官方标题 → 维度 / 主题 / 类型。只做关键词归类，不给影响方向。"""
+    low = " " + str(title or "").lower()
+    for needles, dimension, theme in _AUTO_RULES:
+        if any(needle in low for needle in needles):
+            return {"dimension": dimension, "theme": theme}
+    return {"dimension": "产业与科技政策", "theme": "官方新发文"}
+
+
+def _auto_release(item: dict, source: dict) -> dict:
+    """官方抓取到的条目 → 台账结构（方向一律留空，等人工 / Agent 标注）。
+
+    ``markets`` 三个市场都写 dir=0：官方原文只证明「这件事发生过」，
+    不证明它对哪个市场是利好还是利空。方向标注是编辑动作，不在抓取里自动编。
+    """
+    classify = classify_policy(item["title"])
+    return {
+        "id": f"AUTO-{source['key']}-{item['date'].replace('-', '')}-{abs(hash(item['url'])) % 10000:04d}",
+        "date": item["date"], "issuer": source["issuer"], "jurisdiction": source["jurisdiction"],
+        "doctype": "官方发布", "kind": "发布", "topic": classify["dimension"].split(" · ")[0],
+        "dimension": classify["dimension"], "theme": classify["theme"], "stance": "中性",
+        "magnitude": "中", "horizon": "1-4 周",
+        "title": item["title"][:120], "short": item["title"][:28],
+        "summary": "官方源抓取条目；影响方向待标注，暂不计入指数分。",
+        "markets": {market: _mx(0, 0.0, [], "官方原文，方向待标注") for market in POLICY_MARKETS},
+        "keywords": [], "source": item["url"],
+        "source_note": f'{source["issuer"]} · 官方原文 · {item["date"]}',
+        "auto": True,
+    }
+
+
+def fetch_official(as_of=None, lookback_days: int = OFFICIAL_LOOKBACK_DAYS,
+                   sources: list | None = None) -> dict:
+    """抓官方源头（RSS / 列表页），返回条目与**每个源的核实状态**。
+
+    单源失败不影响其它源；全部失败时 ``ok=0``，由调用方决定「只有台账、没有新抓取」。
+    """
+    end = _as_of(as_of)
+    start = end - timedelta(days=max(1, lookback_days) - 1)
+    rows, items = [], []
+    for source in sources or OFFICIAL_SOURCES:
+        if source.get("mode") not in ("rss", "html"):
+            rows.append({"key": source["key"], "issuer": source["issuer"], "domain": source["domain"],
+                         "entry": source["entry"], "status": "manual",
+                         "note": "只登记入口，靠人工核对"})
+            continue
+        try:
+            text = _get_text(source["entry"])
+        except Exception as error:                 # 网络不可达 / TLS / DNS：如实记录
+            rows.append({"key": source["key"], "issuer": source["issuer"], "domain": source["domain"],
+                         "entry": source["entry"], "status": "error", "note": f"{type(error).__name__}: {error}"[:160]})
+            continue
+        # 入口页写着 HTML，实际返回的可能是 feed（政府站常把 /rss 挂在列表页下），按内容判一次。
+        head = str(text)[:600].lower()
+        is_feed = source.get("mode") == "rss" or "<rss" in head or "<feed" in head
+        parsed = parse_rss(text, source) if is_feed else parse_links(text, source)
+        fresh, seen = [], set()
+        for item in parsed:
+            stamp = datetime.strptime(item["date"], "%Y-%m-%d").date()
+            if not (start <= stamp <= end) or item["url"] in seen:
+                continue
+            seen.add(item["url"])
+            fresh.append(item)
+            if len(fresh) >= OFFICIAL_ITEMS_PER_SOURCE:
+                break
+        items.extend(fresh)
+        rows.append({"key": source["key"], "issuer": source["issuer"], "domain": source["domain"],
+                     "entry": source["entry"], "status": "ok" if fresh else "empty",
+                     "note": f"窗口内 {len(fresh)} 条" if fresh else "抓通了，窗口内没有新条目"})
+    return {
+        "fetched_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),
+        "window": f"{start.isoformat()} 至 {end.isoformat()}",
+        "items": items,
+        "sources": rows,
+        "ok": sum(1 for row in rows if row["status"] == "ok"),
+        "empty": sum(1 for row in rows if row["status"] == "empty"),
+        "error": sum(1 for row in rows if row["status"] == "error"),
+        "manual": sum(1 for row in rows if row["status"] == "manual"),
+    }
+
+
+def load_official_cache(max_age_hours: float = CACHE_TTL_HOURS, path: Path | None = None) -> dict | None:
+    """读官方源缓存（由 ``--refresh`` / CI 定时写入）。过期或不存在返回 None。"""
+    path = path or CACHE_PATH
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        stamp = datetime.strptime(str(payload.get("fetched_at") or "")[:16], "%Y-%m-%d %H:%M")
+    except (OSError, ValueError, TypeError):
+        return None
+    # 负值只可能来自时钟偏差（缓存文件的 UTC 时间比本机还新），按 0 处理，不当作有效历史。
+    age_hours = max(0.0, (datetime.now(timezone.utc).replace(tzinfo=None) - stamp).total_seconds() / 3600)
+    if age_hours > max_age_hours:
+        return None
+    payload["cache_age_hours"] = round(age_hours, 1)
+    return payload
+
+
+def write_official_cache(payload: dict, path: Path | None = None) -> Path:
+    path = Path(path or CACHE_PATH)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def official_releases(payload: dict | None) -> list[dict]:
+    """把抓取结果转成台账条目（只保留能落到官方域名的）。"""
+    if not payload:
+        return []
+    out = []
+    for item in payload.get("items") or []:
+        source = _BY_KEY.get(item.get("source") or "")
+        if not source or not is_official_url(item.get("url") or "") or not item.get("date"):
+            continue
+        out.append(_auto_release(item, source))
+    return out
+
+
+def _title_overlap(a: str, b: str, size: int = 4) -> bool:
+    """两条标题是否高度重合（中文按 4 字切片）。用于避免官方抓取条目与台账重复计数。"""
+    left, right = str(a or ""), str(b or "")
+    if len(left) < size or len(right) < size:
+        return left.strip() == right.strip() and bool(left.strip())
+    grams = {left[i:i + size] for i in range(len(left) - size + 1)}
+    return any(right[i:i + size] in grams for i in range(len(right) - size + 1))
+
+
+def dedupe_auto(auto_releases: list, curated: list) -> list:
+    """官方抓取条目去重：台账已经手工核过同一天、同维度或标题高度重合的，不再重复列。"""
+    kept = []
+    for item in auto_releases:
+        stamp = item.get("date")
+        duplicate = False
+        for row in curated:
+            if row.get("date") != stamp:
+                continue
+            if row.get("dimension") == item.get("dimension") or _title_overlap(row.get("title"), item.get("title")):
+                duplicate = True
+                break
+        if not duplicate and all(item.get("url") != row.get("source") for row in kept):
+            kept.append(item)
+    return kept
+
+
 def _release_date(release: dict) -> date:
     return datetime.strptime(str(release.get("date") or "")[:10], "%Y-%m-%d").date()
 
@@ -455,6 +841,126 @@ def _headline(payload: dict) -> str:
     return text
 
 
+# 官方信息源名称特征：当日抓取里来自这些源的标题，才算「官方动态」（待核验发文）。
+_OFFICIAL_NAME_HINTS = ("国务院", "发改委", "发展改革委", "财政部", "商务部", "证监会", "人民银行", "央行",
+                        "住建部", "住房城乡建设部", "统计局", "金融监管总局", "外汇局", "政府网",
+                        "美联储", "federal reserve", "fomc", "欧洲央行", "ecb", "日本央行", "boj",
+                        "treasury", "财政部", "sec", "联邦公报", "federal register", "g0v",
+                        "govtrack", "equitystack", "政策发布", "政策解读")
+
+
+def official_daily_candidates(brief: dict | None, as_of=None, limit: int = 6) -> list[dict]:
+    """当日抓取里、来自官方信息源且像政策文件的标题，作为「待核验发文」线索。
+
+    与台账的区别：这里没有核实发文日（快讯日期不等于发文日），所以**不计入窗口计分**，
+    只在卡片里列出来，提示「官方源今天说了这些，需要核到原文再入库」。
+    """
+    stamp = _as_of(as_of).isoformat()
+    out, seen = [], set()
+    for name, items in (brief or {}).items():
+        if not any(hint.lower() in str(name or "").lower() for hint in _OFFICIAL_NAME_HINTS):
+            continue
+        for item in items or []:
+            title = str((item or {}).get("title") or "").strip()
+            if not title or title in seen or len(title) < 8:
+                continue
+            low = title.lower()
+            if not any(hint in low for hint in _POLICY_HINT):
+                continue
+            seen.add(title)
+            out.append({"title": title[:110], "source": str(name or ""), "seen_on": stamp,
+                        "status": "待核验发文", "url": str((item or {}).get("url") or "")})
+            if len(out) >= limit:
+                return out
+    return out
+
+
+def _official_summary(payload: dict | None, curated_rows: list, auto_rows: list,
+                     candidates: list | None = None) -> dict:
+    """来源核实汇总：谁抓通了、谁只给入口、台账条目是官方原文还是媒体转述。"""
+    rows = [dict(row) for row in (payload or {}).get("sources") or []]
+    if not rows:
+        # 没有抓取结果时，仍把登记表列出来——读者至少知道该去哪核对。
+        rows = [{"key": item["key"], "issuer": item["issuer"], "domain": item["domain"],
+                 "entry": item["entry"],
+                 "status": "manual" if item["mode"] == "manual" else "pending",
+                 "note": item["note"]} for item in OFFICIAL_SOURCES]
+    by_key = {row["key"]: row for row in rows}
+    linked = []
+    for release in curated_rows:
+        source = official_source_for(release["issuer"])
+        if not source:
+            continue
+        linked.append({
+            "id": release["id"],
+            "issuer": source["issuer"],
+            "domain": source["domain"],
+            "entry": source["entry"],
+            "source_kind": source_kind(release["source"]),
+            "status": by_key.get(source["key"], {}).get("status", "pending"),
+        })
+    return {
+        "available": bool(payload),
+        "fetched_at": (payload or {}).get("fetched_at") or "",
+        "cache_age_hours": (payload or {}).get("cache_age_hours"),
+        "window": (payload or {}).get("window") or "",
+        "ok": (payload or {}).get("ok", 0),
+        "empty": (payload or {}).get("empty", 0),
+        "error": (payload or {}).get("error", 0),
+        "manual": (payload or {}).get("manual", 0),
+        "registered": len(OFFICIAL_SOURCES),
+        "auto_items": len(auto_rows),
+        "entries": linked,
+        "failed": [row["issuer"] for row in rows if row.get("status") == "error"],
+        "empty_sources": [row["issuer"] for row in rows if row.get("status") == "empty"],
+        "manual_sources": [row["issuer"] for row in rows if row.get("status") == "manual"],
+        "display": _official_display(payload, linked, auto_rows, candidates or []),
+        "status_line": _official_status_line(payload, auto_rows),
+    }
+
+
+def _official_display(payload: dict | None, entries: list, auto_rows: list,
+                      candidates: list | None = None) -> str:
+    """页面上那一行「来源」：只给数字与源名，不写解释、不写操作提示。"""
+    registered = len(OFFICIAL_SOURCES)
+    official = sum(1 for row in entries if row["source_kind"] == "官方原文")
+    media = sum(1 for row in entries if row["source_kind"] == "媒体转述")
+    ledger = f"台账 {len(entries)} 条：官方原文 {official}、媒体转述 {media}"
+    if not payload:
+        text = f"官方入口 {registered} 个｜尚未抓取"
+        if candidates:
+            text += f'｜当日官方源 {len(candidates)} 条'
+        return f"{text}｜{ledger}"
+    bits = [f'官方入口 {registered} 个',
+            f'抓通 {payload.get("ok", 0)} · 空 {payload.get("empty", 0)} · 失败 {payload.get("error", 0)}'
+            f' · 仅入口 {payload.get("manual", 0)}',
+            f'抓取 {(payload.get("fetched_at") or "—")} UTC']
+    age = payload.get("cache_age_hours")
+    if isinstance(age, (int, float)) and age > CACHE_TTL_HOURS:
+        bits.append(f'缓存已过期 {int(age)} 小时')
+    if auto_rows:
+        bits.append(f'窗口内新发文 {len(auto_rows)} 条')
+    if candidates:
+        bits.append(f'当日官方源 {len(candidates)} 条')
+    bits.append(ledger)
+    return "｜".join(bits)
+
+
+def _official_status_line(payload: dict | None, auto_rows: list) -> str:
+    if not payload:
+        return "官方源未抓取"
+    bits = [f'官方源抓取 {payload.get("ok", 0)} 通']
+    if payload.get("empty"):
+        bits.append(f'{payload["empty"]} 通但无新条目')
+    if payload.get("error"):
+        bits.append(f'{payload["error"]} 个失败')
+    if payload.get("manual"):
+        bits.append(f'{payload["manual"]} 个只给入口')
+    if auto_rows:
+        bits.append(f'窗口内官方新发文 {len(auto_rows)} 条')
+    return "，".join(bits)
+
+
 def _score_layer(releases: list, market: str, weight: float = 1.0) -> float:
     """一层政策（新发文 / 存量）对某市场的指数分。
 
@@ -477,11 +983,18 @@ def _score_layer(releases: list, market: str, weight: float = 1.0) -> float:
 
 
 def analyze_policy_market_impact(brief: dict | None = None, as_of=None,
-                                 days: int = POLICY_WINDOW_DAYS) -> dict:
+                                 days: int = POLICY_WINDOW_DAYS,
+                                 official: dict | None = None,
+                                 use_cache: bool = True) -> dict:
     """近 ``days`` 日全球政策发布对 A 股 / 港股 / 美股的影响。
 
     ``brief`` 只用于给窗口内政策挂「当日快讯仍在定价」的标题，不改变指数分。
     没有命中台账的快讯不会被编成新的政策发布。
+
+    ``official``：官方源抓取结果（``fetch_official()`` 的返回）。缺省时读
+    ``policy_ledger_cache.json``（由 ``python3 policy_impact.py --refresh`` 或 CI 定时写入）。
+    抓到的官方条目一律方向留空、只列不计分——「官方发了什么」由抓取证明，
+    「对市场是利好还是利空」是编辑判断，不自动编。
     """
     start, end = policy_window_bounds(as_of, days)
     in_window, outside = [], []
@@ -496,6 +1009,21 @@ def analyze_policy_market_impact(brief: dict | None = None, as_of=None,
     published = [release for release in outside if _release_date(release) < start]
     carry = [release for release in published if active_until(release) >= end]
     lapsed = [release for release in published if start <= active_until(release) < end]
+    # 官方源头：自动抓到的窗口内发文单独一层，只列不计分。
+    official_payload = official if official is not None else (load_official_cache() if use_cache else None)
+    auto_all = official_releases(official_payload)
+    auto_in_window = []
+    for row in auto_all:
+        stamp = _release_date(row)
+        if start <= stamp <= end:
+            auto_in_window.append(row)
+    auto_in_window = dedupe_auto(sorted(auto_in_window, key=lambda item: item["date"], reverse=True),
+                                 in_window)
+    candidates = official_daily_candidates(brief, as_of=end)
+    # 来源核实按台账全量走（不只窗口内）：读者要能逐条看到「这条引用的是官方原文还是媒体转述」。
+    verify_rows = [{"id": row["id"], "date": row["date"], "issuer": row["issuer"], "source": row["source"]}
+                   for row in _POLICY_RELEASES]
+
     # 存量清单按「对三市的影响大小」排：读者先看到还在压着指数的政策，而不是年限最长的那条。
     carry.sort(key=lambda item: (abs(sum(_contrib(item, market) for market in POLICY_MARKETS)),
                                  item["date"]), reverse=True)
@@ -588,6 +1116,8 @@ def analyze_policy_market_impact(brief: dict | None = None, as_of=None,
             "score": round(_event_score(release), 3),
             "mentions": _mentions(brief, release),
             "layer": "新发文",
+            "source_kind": source_kind(release["source"]),
+            "official": official_source_for(release["issuer"]),
             "days_ago": max(0, (end - _release_date(release)).days),
             "active": active_until(release) >= end,
             "active_until": active_until(release).isoformat(),
@@ -661,6 +1191,11 @@ def analyze_policy_market_impact(brief: dict | None = None, as_of=None,
         "outside": len(outside),
         "carry": len(carry_releases),
         "lapsed": len(lapsed),
+        "auto": len(auto_in_window),
+        "ledger": len(verify_rows),
+        "official_entries": sum(1 for item in verify_rows if source_kind(item["source"]) == "官方原文"),
+        "media_entries": sum(1 for item in verify_rows if source_kind(item["source"]) == "媒体转述"),
+        "candidates": len(candidates),
     }
     latest = releases[0]["date"] if releases else ""
     latest_any = max((item["date"] for item in _POLICY_RELEASES), default="")
@@ -716,6 +1251,15 @@ def analyze_policy_market_impact(brief: dict | None = None, as_of=None,
         "pressure_events": pressure_events,
         "support_events": support_events,
         "carry_releases": carry_releases,
+        "auto_releases": [
+            {key: row.get(key) for key in ("id", "date", "issuer", "jurisdiction", "dimension",
+                                           "theme", "title", "short", "source", "source_note",
+                                           "doctype", "kind")}
+            | {"days_ago": max(0, (end - _release_date(row)).days)}
+            for row in auto_in_window
+        ],
+        "official": _official_summary(official_payload, verify_rows, auto_in_window, candidates),
+        "official_candidates": candidates,
         "lapsed_releases": [
             {"id": item["id"], "date": item["date"], "short": item["short"],
              "issuer": item["issuer"], "active_until": active_until(item).isoformat(),
@@ -821,6 +1365,16 @@ def render_policy_impact_rows(impact: dict | None, esc, level: int = 2) -> str:
         rows.append(f'<tr><td class="td-n">主</td><td class="td-t"><div>{tag("主线归并", "tag-w")}'
                     f'　<span class="sub">同主题合并，存量按半权，三市合成分</span></div>{"".join(lines)}</td></tr>')
 
+    official = impact.get("official") or {}
+    if level > 0:
+        rows.append(
+            f'<tr><td class="td-n">源</td><td class="td-t">'
+            f'<div>{tag("来源", "tag-w")} <span class="sub">{esc(official.get("display") or "")}</span></div>'
+            + (f'<div class="ev">抓取失败：{esc("、".join(official.get("failed") or []))}</div>'
+               if official.get("failed") else "")
+            + "</td></tr>"
+        )
+
     releases = impact.get("releases") or []
     rows.append(
         f'<tr><td colspan="2" class="td-hdr">{tag("窗口内政策发布")} '
@@ -872,6 +1426,33 @@ def render_policy_impact_rows(impact: dict | None, esc, level: int = 2) -> str:
         if len(carry) > limit_c:
             rows.append(f'<tr><td colspan="2" class="sub" style="padding:4px 0;">'
                         f'另有 {len(carry) - limit_c} 项存量政策未逐条列出，完整清单见 /api/policy。</td></tr>')
+    auto_rows = impact.get("auto_releases") or []
+    if auto_rows and level > 0:
+        rows.append(
+            f'<tr><td colspan="2" class="td-hdr">{tag("官方新发文（自动抓取）", "tag-w")} '
+            f'<span class="sub">{len(auto_rows)} 条 · 官方原文 · 影响方向待标注，不计入指数分</span></td></tr>'
+        )
+        for rank, item in enumerate(auto_rows[:len(auto_rows) if level > 1 else min(3, len(auto_rows))], 1):
+            rows.append(
+                f'<tr><td class="td-n">{rank:02d}</td><td class="td-t">'
+                f'<div>{tag((item.get("date") or "")[5:])} {tag("官方原文", "tag")} '
+                f'<span class="sub">{esc(item.get("issuer") or "")} · {esc(item.get("dimension") or "")}'
+                f' · 已过 {item.get("days_ago", 0)} 天</span></div>'
+                f'<div>{esc(item.get("title") or "")}</div></td></tr>'
+            )
+
+    candidates = impact.get("official_candidates") or []
+    if candidates and level > 1:
+        rows.append(
+            f'<tr><td colspan="2" class="td-hdr">{tag("当日官方源动态", "tag-w")} '
+            f'<span class="sub">{len(candidates)} 条 · 待核验发文日，不入台账</span></td></tr>'
+        )
+        for item in candidates[:4]:
+            rows.append(
+                f'<tr><td class="td-n">·</td><td class="td-t"><div class="ev">'
+                f'{esc(item.get("source") or "")}｜{esc(item.get("title") or "")}</div></td></tr>'
+            )
+
     lapsed = impact.get("lapsed_releases") or []
     if lapsed:
         text = "、".join(f'{esc(item.get("date", "")[5:])} {esc(item.get("short") or "")}' for item in lapsed[:4])
@@ -988,8 +1569,11 @@ def page_section_html(impact: dict | None, as_of: str = "") -> str:
                 f'<span class="sector-stat">{esc(meta)}</span>'
                 f'<ul class="sector-evidence"><li>· {esc(title)}</li>{evidence}</ul></span></li>')
 
+    official = impact.get("official") or {}
+    rows = (f'<li><span class="point-no">源</span><span>{esc(official.get("display") or "")}</span></li>'
+            + (f'<li><span class="point-no">断</span><span>{esc("、".join(official.get("failed") or []))}</span></li>'
+               if official.get("failed") else ""))
     themes = impact.get("themes") or []
-    rows = ""
     if themes:
         rows += ('<li class="group-row"><span class="group-label">主线归并</span>'
                  '<span class="group-note" data-meta="1">同主题合并，存量按半权，三市合成分</span></li>')
@@ -1026,6 +1610,25 @@ def page_section_html(impact: dict | None, as_of: str = "") -> str:
         return (f'<li><span class="point-no">{"－" if press else "＋"}</span>'
                 f'<span class="{cls}">{label}</span><span>{esc("、".join(names))}</span></li>')
 
+    auto_rows = impact.get("auto_releases") or []
+    if auto_rows:
+        rows += ('<li class="group-row"><span class="group-label">官方新发文（自动抓取）</span>'
+                 f'<span class="group-note" data-meta="1">{len(auto_rows)} 条 · 官方原文 · 影响方向待标注，不计入指数分</span></li>')
+        for item in auto_rows:
+            rows += (f'<li><span class="point-no">{esc((item.get("date") or "")[5:])}</span>'
+                     f'<span class="point-label">{esc(item.get("issuer"))}</span>'
+                     f'<span>{chip("官方原文")}'
+                     f'<span class="sector-stat">{esc(item.get("dimension") or "")} · 已过 {item.get("days_ago", 0)} 天</span>'
+                     f'<ul class="sector-evidence"><li>· {esc(item.get("title"))}</li></ul></span></li>')
+
+    candidates = impact.get("official_candidates") or []
+    if candidates:
+        rows += ('<li class="group-row"><span class="group-label">当日官方源动态</span>'
+                 f'<span class="group-note" data-meta="1">{len(candidates)} 条 · 待核验发文日，不入台账</span></li>')
+        for item in candidates[:4]:
+            rows += (f'<li><span class="point-no">·</span><span>'
+                     f'{esc(item.get("source") or "")}｜{esc(item.get("title") or "")}</span></li>')
+
     lapsed = impact.get("lapsed_releases") or []
     if lapsed:
         text = "、".join(f'{item.get("date", "")[5:]} {item.get("short") or ""}' for item in lapsed[:4])
@@ -1055,10 +1658,95 @@ def page_section_html(impact: dict | None, as_of: str = "") -> str:
     )
 
 
-if __name__ == "__main__":
+def verification_report() -> list[dict]:
+    """台账逐条核对表：机构、官方入口、引用链接属于官方原文还是媒体转述。"""
+    rows = []
+    for release in _POLICY_RELEASES:
+        source = official_source_for(release["issuer"])
+        rows.append({
+            "id": release["id"],
+            "date": release["date"],
+            "issuer": release["issuer"],
+            "official_issuer": (source or {}).get("issuer") or "",
+            "domain": (source or {}).get("domain") or "",
+            "entry": (source or {}).get("entry") or "",
+            "source": release["source"],
+            "source_kind": source_kind(release["source"]),
+            "checked": bool(source),
+        })
+    return rows
+
+
+def render_index_section(path: str | Path = "index.html", as_of=None,
+                         official: dict | None = None) -> str:
+    """把 index.html 里的政策段整段替换成当前渲染结果（静态页面也吃同一份数据与来源核实）。"""
+    target = Path(path)
+    html = target.read_text(encoding="utf-8")
+    marker = 'id="policyDeepSection"'
+    index = html.find(marker)
+    if index < 0:
+        raise SystemExit(f"{target} 里找不到 {marker}，不做改动")
+    start = html.rfind("<section", 0, index)
+    end = html.find("</section>", index)
+    if start < 0 or end < 0:
+        raise SystemExit(f"{target} 的政策段边界不完整，不做改动")
+    impact = analyze_policy_market_impact(as_of=as_of, official=official)
+    section = page_section_html(impact, as_of=impact["end"])
+    out = html[:start] + section + html[end + len("</section>"):]
+    target.write_text(out, encoding="utf-8")
+    return section
+
+
+def main(argv=None) -> int:
+    import sys
+
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if "--refresh" in argv:
+        payload = fetch_official()
+        print(f'官方源抓取 {payload["fetched_at"]} · 窗口 {payload["window"]}')
+        for row in payload["sources"]:
+            print(f'  [{row["status"]:<6}] {row["issuer"]:<12} {row["domain"]:<24} {row["note"]}')
+        print(f'  合计：ok={payload["ok"]} empty={payload["empty"]} error={payload["error"]} manual={payload["manual"]}')
+        print(f'  窗口内官方条目 {len(payload["items"])} 条')
+        for item in payload["items"]:
+            print(f'    {item["date"]} {item["source"]:<5} {item["title"][:70]}')
+        if "--write" in argv:
+            if payload["ok"]:
+                path = write_official_cache(payload)
+                print(f'  已写入缓存 {path}')
+            else:
+                # 一个源都没抓通时不写文件：宁可保留上一份可用缓存，也不要用全空结果覆盖它。
+                print("  未写入缓存：一个官方源都没抓通，保留上一份缓存不动。")
+        if not payload["ok"]:
+            print("  提示：一个官方源都没抓通（网络受限）。缓存未更新，卡片会如实显示「官方源未抓取」。")
+        return 0 if payload["ok"] else 2
+    if "--render-index" in argv:
+        path = "index.html"
+        for index, arg in enumerate(argv):
+            if arg == "--render-index" and index + 1 < len(argv) and not argv[index + 1].startswith("--"):
+                path = argv[index + 1]
+        cache = load_official_cache(max_age_hours=10 ** 9)   # 静态快照：宁可用旧一点的抓取结果，也要把来源状态写上
+        section = render_index_section(path, official=cache)
+        note = "官方源缓存" if cache else "无官方源缓存（页面会写明未抓取）"
+        print(f'已重生成 {path} 政策段（{len(section)} 字节，{note}）')
+        return 0
+    if "--verify" in argv:
+        rows = verification_report()
+        for row in rows:
+            mark = "官方" if row["source_kind"] == "官方原文" else "媒体"
+            print(f'{row["date"]} {mark} {row["issuer"]:<22} 入口 {row["domain"] or "—"}')
+            print(f'         引用 {row["source"]}')
+        bad = [row for row in rows if not row["checked"]]
+        print(f'共 {len(rows)} 条，未匹配官方入口 {len(bad)} 条')
+        return 0
     out = analyze_policy_market_impact(as_of="2026-09-23")
     print(out["headline"])
     for market in out["markets"]:
         print(market["name"], market["bias"], market["score"], market["support"], market["pressure"])
     for item in out["releases"]:
         print(item["date"], item["kind"], item["short"], item["score"])
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

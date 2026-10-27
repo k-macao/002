@@ -1,0 +1,74 @@
+name: 政策台账 · 官方源头刷新
+
+# 「AI 政策深度」窗口内政策发布的数据新鲜度保障。
+#
+# 为什么需要这个：政策台账（policy_impact._POLICY_RELEASES）是人工核过的发文，
+# 窗口一滚动就会变空；卡片靠「官方源头抓取」补上窗口内的新发文。
+# 抓取在 CI 里跑（有外网），结果写进 policy_ledger_cache.json 并提交，
+# 服务端 / 推送只读缓存，不在请求路径上打外网。
+#
+# 手动触发时可选是否提交缓存：默认提交。
+on:
+  schedule:
+    # GitHub Actions 使用 UTC。01:10 UTC = 09:10 北京时间：覆盖美欧前一日收盘后的公告。
+    - cron: "10 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: policy-ledger-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 官方源登记一致性自检
+        run: python3 -m unittest test_sources.PolicyOfficialSourceTest -v
+
+      - name: 抓取官方源头并写缓存
+        # 单源失败不中断；全部失败时退出码 2，这里用 || true 让日志保留但不判失败，
+        # 缓存文件不会被半截数据覆盖（只有 ok>0 才写文件）。
+        run: |
+          set -o pipefail
+          python3 policy_impact.py --refresh --write | tee /tmp/refresh.log
+          status=${PIPESTATUS[0]}
+          echo "refresh exit=$status"
+          exit 0
+
+      - name: 写入 Step Summary
+        if: always()
+        run: |
+          echo "## 官方源抓取结果" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/refresh.log 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          if [ -f policy_ledger_cache.json ]; then
+            echo "缓存条目数：$(python3 -c 'import json;print(len(json.load(open("policy_ledger_cache.json"))["items"]))')" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: 用新缓存重生成静态页政策段
+        run: |
+          if [ ! -f policy_ledger_cache.json ]; then echo "没有缓存文件，跳过"; exit 0; fi
+          python3 policy_impact.py --render-index index.html
+
+      - name: 提交缓存与静态页（仅 main 分支且确有变化）
+        if: github.ref == 'refs/heads/main'
+        run: |
+          if [ ! -f policy_ledger_cache.json ]; then echo "没有缓存文件，跳过"; exit 0; fi
+          if git diff --quiet -- policy_ledger_cache.json index.html; then echo "缓存与页面均无变化"; exit 0; fi
+          git config user.name "policy-ledger-bot"
+          git config user.email "policy-ledger-bot@users.noreply.github.com"
+          git add policy_ledger_cache.json index.html
+          git commit -m "chore(policy): 刷新官方政策源头缓存与静态页 $(date -u +%Y-%m-%d)"
+          git push
