@@ -4,3 +4,7 @@ __pycache__/
 *.pyc
 # 本地预览用：由 sources.build_html() 渲染出的推送 HTML 快照
 brief-preview.html
+
+# AI 量化日报的每日归档（按 YYYYMMDD_量化交易日报.md 生成，属产物不入库；
+# 模板示例见 docs/quant_daily_example_20261026.md）
+reports/

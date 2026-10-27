@@ -145,6 +145,31 @@ class ServerSmokeTest(unittest.TestCase):
         self.assertEqual(status, 404)
         self.assertIn("civic", json.loads(raw)["sections"])
 
+    def test_quant_endpoint_demo_and_markdown(self):
+        # GET /api/quant?demo=1：五维 + 策略 + 风险 + 41 个原子动作，Markdown 走 ?format=markdown。
+        status, raw = request(self.base, "GET", "/api/quant?demo=1")
+        self.assertEqual(status, 200)
+        data = json.loads(raw)
+        for key in ("column", "as_of", "summary", "quality", "dimensions",
+                    "strategy", "risks", "markdown", "plan"):
+            self.assertIn(key, data)
+        self.assertEqual(data["column"], "AI 量化日报")
+        self.assertEqual(len(data["dimensions"]), 5)
+        self.assertEqual(data["plan"]["action_count"], 41)
+        self.assertLessEqual(len(data["summary"]), 100)
+
+        status_md, md = request(self.base, "GET", "/api/quant?demo=1&format=markdown")
+        self.assertEqual(status_md, 200)
+        self.assertIn("# 2026-10-26 量化交易日报", md)
+        self.assertIn("## 核心结论速览", md)
+
+    def test_quant_endpoint_skips_non_trading_day(self):
+        status, raw = request(self.base, "GET", "/api/quant?date=2026-10-25")
+        self.assertEqual(status, 200)
+        data = json.loads(raw)
+        self.assertEqual(data["status"], "skipped")
+        self.assertEqual(data["summary"], "今日非交易日，无日报")
+
     def test_policy_endpoint_returns_deep_analysis(self):
         # GET /api/policy：「AI 政策分析」深度层（知识库检索 / 推理链 / 模型）随接口一并返回。
         status, raw = request(self.base, "GET", "/api/policy")

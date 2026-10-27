@@ -73,6 +73,7 @@ from functools import lru_cache
 from datetime import datetime, timedelta, timezone
 import big_v_analysis
 import deepseek_search
+import quant_daily
 import policy_impact
 from urllib.parse import urlencode, urljoin
 from html.parser import HTMLParser
@@ -5137,6 +5138,19 @@ def pushplus_quota() -> tuple[int, int | None]:
     return max_length, items
 
 
+def _quant_report(brief: dict, review: dict | None) -> dict | None:
+    """推送链路用的量化日报：复用本次已抓到的看盘数据，不再额外打行情接口。
+
+    失败时返回 None，推送里就不出这张卡片——量化模块坏掉不能拖垮每日推送。
+    """
+    try:
+        as_of = (review or {}).get("date") or _ashare_today().strftime("%Y-%m-%d")
+        return quant_daily.daily(as_of=as_of, market=review, brief=brief,
+                                 archive_report=False)
+    except Exception:
+        return None
+
+
 def build_html(
     brief: dict,
     now: datetime | None = None,
@@ -5146,6 +5160,7 @@ def build_html(
     max_items_per_source: int | None = None,
     max_length: int | None = None,
     series: dict | None = None,
+    quant: dict | None = None,
 ) -> str:
     """生成适合微信阅读的竖版长图文简报（内联样式，兼容 PushPlus HTML 模板）。
 
@@ -5161,6 +5176,8 @@ def build_html(
     正文以分析栏目为主（AI 每日总结 → AI 看盘 → AI 情绪热力图 → AI 政策分析 → AI 政策深度 → AI 政策研报 → AI 板块机会 → 大 V 分析），
     「AI 看盘」紧跟「AI 每日总结」之后，让最新的 A 股 / 港股 / 美股行情在开篇就能看到；
     不展示监测平台清单、时间核对或推送协议说明。
+    **「AI 量化日报」卡片**排在「大 V 分析」之后、「全网快讯」之前（见 :func:`_quant_report`）：
+    五维信号 + 权益仓位中枢 + 风险摘要；``quant`` 参数可注入已算好的报表，字符额度极紧时整段省略。
     **正文最后（免责声明与作者署名之前）追加「全网快讯」列表**：每个数据源固定保留
     :data:`NEWS_ITEMS_PER_SOURCE`（3）条，按源顺序取每源前 3 条并跨源去重，
     **只列标题、不标注来源（隐藏源头）**；``max_length`` 不够时自动收敛到每源 2 / 1 条，
@@ -5684,6 +5701,8 @@ f'<div class="ftr">近30日只统计已核验发文日的全球政策，已观�
         hk_review = analyze_hk()
     if us_review is None:
         us_review = analyze_us()
+    if quant is None:
+        quant = _quant_report(brief, review)
 
     def _chip(text: str, color_cls: str = "hl") -> str:
         return f'<span class="{color_cls}">{text}</span>'
@@ -5793,6 +5812,15 @@ f'<div class="ftr">近30日只统计已核验发文日的全球政策，已观�
         f'.mkt-h{{margin:2px 0 4px;}}'
         f'</style>'
     )
+
+    def _render_quant(level: int = 1) -> str:
+        """「AI 量化日报」卡片：五维信号 + 仓位中枢 + 风险，详情走 /api/quant 与 Markdown 归档。
+
+        量化引擎异常（quant 为 None）时整段省略——模块坏了不能把每日推送拖死。
+        """
+        if not quant:
+            return ""
+        return quant_daily.build_html_section(quant, level=level)
 
     def _render_big_v(level: int = 2) -> str:
         """「大 V 分析」卡片：框架六步 + 政治 / 地缘 / 经济因果链 + 升级博弈树。
@@ -5969,6 +5997,7 @@ f'<div class="ftr">近30日只统计已核验发文日的全球政策，已观�
             + policy_deep_cards
             + opportunities_card
             + _render_big_v(deep_level)
+            + _render_quant(deep_level)
             + _news_card(per_source)
             + f'<div style="margin:8px 0 0;color:{muted};font-size:10px;text-align:center;">数据仅供参考，不构成投资建议</div>'
             + f'<div style="margin:6px 0 0;padding:6px 4px 0;border-top:1px solid {rule};color:{ink};font-size:10px;text-align:center;font-weight:700;">{_esc(author)}</div>'

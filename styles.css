@@ -1348,3 +1348,106 @@ footer strong { display: block; color: var(--ink); text-align: center; font-size
   .deai-surfaces { grid-template-columns: 1fr; }
   .deai-score-delta { margin-left: 0; }
 }
+
+/* ── AI 量化日报 · 五步流程 × 五维分析 ─────────────────────────────────── */
+.quant-card { padding-top: 12px; }
+.quant-notice {
+  margin: 0 0 12px; padding: 10px 12px;
+  border-left: 4px solid var(--green); border-radius: 0 9px 9px 0;
+  background: var(--paper-lift); color: var(--ink-soft);
+  font-size: 11px; line-height: 1.75;
+}
+.quant-notice b { color: var(--ink); }
+.quant-notice code { color: var(--ink); background: var(--paper); padding: 1px 4px; border-radius: 4px; }
+.quant-summary {
+  margin: 0 0 10px; color: var(--ink); font-size: 12.5px; line-height: 1.8; font-weight: 600;
+}
+.quant-summary mark, .quant-meta mark {
+  background: var(--green); color: var(--ink); padding: 0 4px; border-radius: 3px; font-weight: 800;
+}
+.quant-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin: 0 0 14px; color: var(--ink-soft); font-size: 10px; line-height: 1.6;
+}
+.quant-meta code { color: var(--ink); }
+.quant-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }
+.quant-step {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 9px 10px; border: 1px solid var(--rule); border-radius: 9px; background: var(--paper);
+}
+.quant-step span {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 5px; background: var(--green);
+  color: var(--ink); font-size: 10px; font-weight: 900;
+}
+.quant-step b { color: var(--ink); font-size: 11px; }
+.quant-step small { color: var(--ink-soft); font-size: 9.5px; line-height: 1.5; }
+
+.quant-dims { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.quant-dim { padding: 11px 12px; border: 1px solid var(--rule); border-radius: 10px; }
+.quant-dim-head { display: flex; align-items: center; gap: 6px; }
+.quant-dim-head b { color: var(--ink); font-size: 12px; }
+.quant-dim-head em {
+  margin-left: auto; padding: 1px 7px; border-radius: 999px;
+  background: var(--green); color: var(--ink); font-size: 10px; font-style: normal; font-weight: 800;
+}
+.quant-dim-head em.neutral { background: var(--paper-lift); color: var(--ink-soft); }
+.quant-dim-head em.press { background: var(--gray-light); color: var(--ink); }
+.quant-dim-focus { margin: 5px 0 7px; color: var(--ink-soft); font-size: 10px; line-height: 1.6; }
+.quant-dim ul { margin: 0; padding: 0; list-style: none; }
+.quant-dim li {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px;
+  padding: 5px 0; border-bottom: 1px dashed var(--rule); font-size: 10.5px; line-height: 1.55;
+}
+.quant-dim li:last-child { border-bottom: 0; }
+.quant-dim li span { color: var(--ink-soft); flex: 0 0 auto; }
+.quant-dim li b { color: var(--ink); font-weight: 800; }
+.quant-dim li small { flex-basis: 100%; color: var(--gray-dark); font-size: 9.5px; }
+.quant-dim-note { margin: 8px 0 0; color: var(--ink-soft); font-size: 10px; line-height: 1.7; }
+
+.quant-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 10.5px; }
+.quant-table th {
+  padding: 6px 8px; border-bottom: 1px solid var(--rule);
+  color: var(--ink-soft); font-size: 9.5px; font-weight: 700; text-align: left; white-space: nowrap;
+}
+.quant-table td {
+  padding: 7px 8px; border-bottom: 1px solid var(--rule);
+  color: var(--ink); vertical-align: top; line-height: 1.6;
+}
+.quant-table td:nth-child(2) { white-space: nowrap; color: var(--ink-soft); }
+.quant-table td small { display: block; margin-top: 3px; color: var(--ink-soft); font-size: 9.5px; }
+.quant-table tr:last-child td { border-bottom: 0; }
+.quant-table b { font-weight: 900; }
+
+.quant-risks { margin: 0 0 14px; padding: 0; list-style: none; }
+.quant-risks li {
+  padding: 7px 10px; margin-bottom: 6px; border-left: 3px solid var(--green);
+  border-radius: 0 7px 7px 0; background: var(--paper-lift);
+  color: var(--ink-soft); font-size: 10.5px; line-height: 1.7;
+}
+.quant-risks li b { display: block; color: var(--ink); font-size: 11px; margin-bottom: 2px; }
+
+.quant-actions { margin: 4px 0 12px; border: 1px solid var(--rule); border-radius: 9px; }
+.quant-actions summary {
+  padding: 9px 11px; color: var(--ink); font-size: 11px; font-weight: 700; cursor: pointer;
+  background: var(--paper-lift); border-radius: 9px;
+}
+.quant-action-table { width: 100%; border-collapse: collapse; font-size: 10px; }
+.quant-action-table th {
+  padding: 6px 8px; text-align: left; color: var(--ink-soft); font-size: 9.5px;
+  border-bottom: 1px solid var(--rule); white-space: nowrap;
+}
+.quant-action-table td { padding: 5px 8px; border-bottom: 1px solid var(--rule); color: var(--ink-soft); line-height: 1.55; }
+.quant-action-table td:nth-child(1) { white-space: nowrap; color: var(--gray-dark); }
+.quant-action-table td:nth-child(2) { color: var(--ink); font-weight: 700; white-space: nowrap; }
+.quant-action-table code { font-family: var(--mono); font-size: 9.5px; color: var(--ink); }
+.quant-action-table tr.quant-action-group td {
+  background: var(--paper-lift); color: var(--ink); font-size: 10.5px; font-weight: 700;
+}
+.quant-action-table tr.quant-action-group small { color: var(--ink-soft); font-weight: 400; }
+@media (max-width: 720px) {
+  .quant-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .quant-dims { grid-template-columns: 1fr; }
+  .quant-action-table td:nth-child(4) { display: none; }
+  .quant-action-table th:nth-child(4) { display: none; }
+}

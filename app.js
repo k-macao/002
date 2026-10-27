@@ -853,3 +853,125 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
   }
   load();
 })();
+
+/* ---- AI 量化日报 · 五步流程 × 五维分析 ----
+   静态页保留 2026-10-26 示例快照（quant_daily.demo_bundle 渲染结果）；
+   server.py 可用时用 /api/quant 按当日行情 + 快讯重算，非交易日显示「今日非交易日，无日报」。
+   所有外部文本都转义；数据缺失项按接口返回的 status 标 ⚠️，不在前端补数。 */
+(function(){
+  const summaryEl=document.getElementById('quantSummary');
+  const metaEl=document.getElementById('quantMeta');
+  const dimsEl=document.getElementById('quantDims');
+  const stratEl=document.getElementById('quantStrategy');
+  const risksEl=document.getElementById('quantRisks');
+  const pillEl=document.getElementById('quantPill');
+  if(!summaryEl||!metaEl||!dimsEl||!stratEl||!risksEl) return;
+
+  function esc(s){
+    return String(s==null?'':s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+  function arr(v){ return Array.isArray(v)?v:[]; }
+  function mark(status){
+    if(status==='missing'||status==='anomaly') return ' ⚠️';
+    if(status==='proxy') return '（代理）';
+    return '';
+  }
+  function signalClass(signal){
+    if(signal==='看空') return 'press';
+    if(signal==='中性') return 'neutral';
+    return '';
+  }
+
+  function renderDims(dims){
+    if(!dims.length){
+      dimsEl.innerHTML='<article class="quant-dim"><p class="quant-dim-note">当日五维数据均未取得。</p></article>';
+      return;
+    }
+    dimsEl.innerHTML=dims.map(d=>{
+      const metrics=arr(d.metrics).slice(0,4).map(m=>(
+        `<li><span>${esc(m.label)}</span><b>${esc(m.value)}${mark(m.status)}</b>`
+        + (m.delta?`<small>${esc(m.delta)}</small>`:'')
+        + `</li>`
+      )).join('');
+      const first=arr(d.highlights)[0]||'';
+      return `<article class="quant-dim">`
+        + `<div class="quant-dim-head"><span class="point-no">${esc(d.no)}</span>`
+        + `<b>${esc(d.label)}</b>`
+        + `<em class="${signalClass(d.signal)}">${esc(d.signal)}</em></div>`
+        + `<p class="quant-dim-focus">${esc(d.focus||'')}</p>`
+        + `<ul>${metrics}</ul>`
+        + `<p class="quant-dim-note">${esc(first)}</p>`
+        + `</article>`;
+    }).join('');
+  }
+
+  function renderStrategy(strategy){
+    const items=arr(strategy&&strategy.items);
+    const position=(strategy&&strategy.position)||{};
+    let html='<tr><th>策略</th><th>信号</th><th>动作</th></tr>';
+    html+=items.map(i=>(
+      `<tr><td>${esc(i.label)}</td><td>${esc(i.signal)}</td>`
+      + `<td>${esc(i.title)}<small>${esc(i.detail)}</small></td></tr>`
+    )).join('');
+    if(position.value!=null){
+      const delta=(position.delta!=null)?`（较上一日 ${position.delta>0?'+':''}${position.delta}pct）`:'';
+      html+=`<tr><td>总仓位</td><td>${esc(position.signal||'')}</td>`
+        + `<td>权益仓位中枢 <b>${esc(position.value)}%</b>${esc(delta)}`
+        + `<small>${esc(position.reason||'')}</small></td></tr>`;
+    }
+    stratEl.innerHTML=html;
+  }
+
+  function renderRisks(risks){
+    risksEl.innerHTML=arr(risks).map(r=>{
+      const icon=(r.level==='高'||r.level==='中')?'⚠️':'✅';
+      return `<li><b>${icon} ${esc(r.title)}（${esc(r.level)}）</b>${esc(r.detail)}</li>`;
+    }).join('');
+  }
+
+  function render(data){
+    if(!data || data.error) return;
+    if(data.status==='skipped'){
+      summaryEl.innerHTML=`<mark>${esc(data.as_of||'今日')}</mark>${esc(data.summary||'今日非交易日，无日报')}`;
+      metaEl.innerHTML='<span class="meta-tag neutral">非交易日 · 自动跳过</span>'
+        + `<span>${esc((data.trading_day&&data.trading_day.reason)||'')} · 执行方案仍随接口返回</span>`;
+      if(pillEl) pillEl.textContent='今日非交易日';
+      dimsEl.innerHTML='';
+      stratEl.innerHTML='';
+      renderRisks([]);
+      return;
+    }
+    const quality=data.quality||{};
+    const dims=arr(data.dimensions);
+    const longCount=dims.filter(d=>d.signal==='看多').length;
+    const neutralCount=dims.filter(d=>d.signal==='中性').length;
+    const position=(data.strategy&&data.strategy.position)||{};
+    summaryEl.innerHTML=`<mark>核心结论 · ${esc(data.as_of||'')}</mark>${esc(data.summary||'')}`;
+    metaEl.innerHTML=`<span class="meta-tag">数据完整度 ${Number(quality.score||0)}%</span>`
+      + `<span class="meta-tag neutral">五维 ${longCount} 看多 · ${neutralCount} 中性</span>`
+      + `<span class="meta-tag">权益仓位 ${esc(position.value!=null?position.value+'%':'数据暂缺')}</span>`
+      + `<span>数据源 ${esc(data.source==='live'?'实时接口 + 当日快讯':(data.source==='demo'?'示例数据包':'外部数据包'))}`
+      + ` · 归档 <code>reports/${esc(String(data.as_of||'').replace(/-/g,''))}_量化交易日报.md</code></span>`;
+    renderDims(dims);
+    renderStrategy(data.strategy||{});
+    renderRisks(data.risks||[]);
+    if(pillEl) pillEl.textContent=`数据完整度 ${Number(quality.score||0)}%`;
+  }
+
+  async function load(){
+    if(typeof isGithubPages!=='undefined' && isGithubPages) return;
+    try{
+      const res=await fetch('api/quant');
+      if(!res.ok) return;
+      const data=await res.json();
+      if(data && !data.error) render(data);
+    }catch(e){ /* 静态托管 / 离线：保留页面里的示例快照 */ }
+  }
+  load();
+  if(typeof refreshBtn!=='undefined' && refreshBtn){
+    refreshBtn.addEventListener('click', load);
+  }
+  window._quantReload=load;
+})();
