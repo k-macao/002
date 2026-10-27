@@ -485,6 +485,16 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
       </div>`;
     }).join('');
 
+    const marketsLogic=(impact.markets||[]).map(market=>{
+      const press=String(market.bias||'').includes('空');
+      const evidence=[market.driver_line, market.reading].filter(Boolean)
+        .map(line=>`<li>· ${esc(line)}</li>`).join('');
+      return `<li><span class="point-no">${esc(market.name)}</span><span class="point-label ${press?'press':''}">${esc(market.bias||'—')}</span>`
+        + `<span>${chip(`指数分 ${Number(market.score||0).toFixed(2)}`)}`
+        + `<span class="sector-stat">新发文 ${Number(market.score_window||0).toFixed(2)} / 存量 ${Number(market.score_carry||0).toFixed(2)}</span>`
+        + `<ul class="sector-evidence">${evidence}</ul></span></li>`;
+    }).join('');
+
     const themes=(impact.themes||[]).map(item=>{
       const press=item.direction==='压制';
       const src=[item.window?`新 ${item.window}`:'', item.carry?`存量 ${item.carry}`:''].filter(Boolean).join(' / ');
@@ -523,7 +533,10 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
     listEl.innerHTML=`<li><span class="point-no">源</span><span>${esc(official.display||'')}</span></li>`
       + ((official.failed||[]).length ? `<li><span class="point-no">断</span><span>${esc((official.failed||[]).join('、'))}</span></li>` : '')
       + (themes
-        ? `<li class="group-row"><span class="group-label">主线归并</span><span class="group-note" data-meta="1">同主题合并，存量按半权，三市合成分</span></li>` + themes
+        ? `<li class="group-row"><span class="group-label">主线归并</span><span class="group-note" data-meta="1">同主题合并，存量半权，合成分可与三市对账</span></li>` + themes
+        : '')
+      + (marketsLogic
+        ? `<li class="group-row"><span class="group-label">三市逻辑</span><span class="group-note" data-meta="1">哪条主线在托、哪条在拉，指数分可复算</span></li>` + marketsLogic
         : '')
       + `<li class="group-row"><span class="group-label">窗口内政策发布</span><span class="group-note">${esc(impact.window_label||'')}，新发文 ${counts.in_window||0} 项，存量生效 ${counts.carry||0} 项，新的在前</span></li>`
       + (releases || `<li><span class="point-no">·</span><span>窗口内没有已核验发文，未核实日期的快讯不编造成政策发布。</span></li>`)
