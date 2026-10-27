@@ -510,13 +510,31 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
     const support=(board.support||[]).map(row=>row.name).join('、') || '—';
     const pressure=(board.pressure||[]).map(row=>row.name).join('、') || '—';
     const counts=impact.counts||{};
-    listEl.innerHTML=(themes
+    const official=impact.official||{};
+    const autoRows=(impact.auto_releases||[]).map(item=>(
+      `<li><span class="point-no">${esc((item.date||'').slice(5))}</span><span class="point-label">${esc(item.issuer)}</span>`
+      + `<span>${chip('官方原文')}<span class="sector-stat">${esc(item.dimension||'')}，已过 ${Number(item.days_ago)||0} 天</span>`
+      + `<ul class="sector-evidence"><li>· ${esc(item.title)}</li></ul></span></li>`
+    )).join('');
+    const candidates=(impact.official_candidates||[]).slice(0,4).map(item=>(
+      `<li><span class="point-no">·</span><span>${esc(item.source||'')}｜${esc(item.title||'')}</span></li>`
+    )).join('');
+
+    listEl.innerHTML=`<li><span class="point-no">源</span><span>${esc(official.display||'')}</span></li>`
+      + ((official.failed||[]).length ? `<li><span class="point-no">断</span><span>${esc((official.failed||[]).join('、'))}</span></li>` : '')
+      + (themes
         ? `<li class="group-row"><span class="group-label">主线归并</span><span class="group-note" data-meta="1">同主题合并，存量按半权，三市合成分</span></li>` + themes
         : '')
       + `<li class="group-row"><span class="group-label">窗口内政策发布</span><span class="group-note">${esc(impact.window_label||'')}，新发文 ${counts.in_window||0} 项，存量生效 ${counts.carry||0} 项，新的在前</span></li>`
       + (releases || `<li><span class="point-no">·</span><span>窗口内没有已核验发文，未核实日期的快讯不编造成政策发布。</span></li>`)
       + (carry
         ? `<li class="group-row"><span class="group-label">存量政策仍在生效</span><span class="group-note" data-meta="1">${(impact.carry_releases||[]).length} 项，发文早于窗口、影响期未走完，按半权计入</span></li>` + carry
+        : '')
+      + (autoRows
+        ? `<li class="group-row"><span class="group-label">官方新发文（自动抓取）</span><span class="group-note" data-meta="1">${(impact.auto_releases||[]).length} 条 · 官方原文 · 影响方向待标注，不计入指数分</span></li>` + autoRows
+        : '')
+      + (candidates
+        ? `<li class="group-row"><span class="group-label">当日官方源动态</span><span class="group-note" data-meta="1">${(impact.official_candidates||[]).length} 条 · 待核验发文日，不入台账</span></li>` + candidates
         : '')
       + ((impact.lapsed_releases||[]).length
         ? `<li class="group-row"><span class="group-label">窗口内已到期</span><span class="group-note" data-meta="1">窗口前段生效、现已过期，不计分</span></li>`

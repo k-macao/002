@@ -8,3 +8,8 @@ brief-preview.html
 # AI 量化日报的每日归档（按 YYYYMMDD_量化交易日报.md 生成，属产物不入库；
 # 模板示例见 docs/quant_daily_example_20261026.md）
 reports/
+
+# 官方政策源头抓取缓存：由 policy_impact.py --refresh --write 或
+# .github/workflows/policy-ledger.yml 生成，需要入库（静态页与接口都读它）。
+# 显式声明只是为了提醒：这个文件是数据，不是产物。
+!policy_ledger_cache.json

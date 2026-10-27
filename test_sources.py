@@ -7,9 +7,10 @@
 import math
 import os
 import random
+import tempfile
 import time
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone
 
 import sources
 
@@ -1536,6 +1537,241 @@ class PolicyCarryLayerTest(unittest.TestCase):
             self.assertIn(token, html)
         self.assertEqual(html.count("<section"), 1)
         self.assertEqual(html.count("</section>"), 1)
+
+
+class PolicyOfficialSourceTest(unittest.TestCase):
+    """「窗口内政策发布」的源头与核实：官方入口登记、官方 / 媒体来源区分、抓取与缓存。"""
+
+    FED_HTML = """
+    <html><body><div class="row">
+      <a href="https://www.federalreserve.gov/newsevents/pressreleases/monetary20261020a.htm">
+        Federal Reserve issues FOMC statement</a>
+      <time>October 20, 2026</time>
+    </div><div class="row">
+      <a href="https://www.federalreserve.gov/newsevents/pressreleases/bcreg20261018a.htm">
+        Agencies announce regulation on capital requirements</a>
+      <span>2026-10-18</span>
+    </div><div class="row">
+      <a href="https://evil.example.com/policy/20261019">A fake policy announcement</a>
+      <span>2026-10-19</span>
+    </div><div class="row">
+      <a href="https://www.federalreserve.gov/speeches/nodate.htm">Speech without a date</a>
+    </div><div class="row">
+      <a href="https://www.federalreserve.gov/aboutthefed/default.htm">About the Fed</a>
+      <span>2026-10-17</span>
+    </div></body></html>"""
+
+    RSS_XML = """<?xml version="1.0"?><rss><channel>
+      <item><title>ECB raises deposit facility rate by 25bp</title>
+        <link>https://www.ecb.europa.eu/press/pr/date/2026/html/ecb.mp261016.en.html</link>
+        <pubDate>Fri, 16 Oct 2026 13:45:00 +0200</pubDate></item>
+      <item><title>Old decision</title>
+        <link>https://www.ecb.europa.eu/press/pr/date/2025/html/ecb.mp250101.en.html</link>
+        <pubDate>Wed, 01 Jan 2025 10:00:00 +0100</pubDate></item>
+    </channel></rss>"""
+
+    def test_registry_covers_every_ledger_issuer(self):
+        pi = sources.policy_impact
+        self.assertGreaterEqual(len(pi.OFFICIAL_SOURCES), 8)
+        domains = [item["domain"] for item in pi.OFFICIAL_SOURCES]
+        self.assertEqual(len(domains), len(set(domains)))
+        for release in pi._POLICY_RELEASES:
+            source = pi.official_source_for(release["issuer"])
+            self.assertIsNotNone(source, release["issuer"])
+            self.assertTrue(source["entry"].startswith("http"))
+
+    def test_specific_issuer_wins_over_generic(self):
+        pi = sources.policy_impact
+        self.assertEqual(pi.official_source_for("美国财政部")["key"], "ust")
+        self.assertEqual(pi.official_source_for("财政部 / 国家发展改革委")["key"], "mof")
+        self.assertEqual(pi.official_source_for("中国人民银行 / 金融监管总局")["key"], "pbc")
+        self.assertEqual(pi.official_source_for("未知机构"), None)
+
+    def test_curated_entries_are_media_not_official(self):
+        # 台账引用的是媒体转述：卡片要如实标「媒体转述」，不能冒充官方原文。
+        rows = sources.policy_impact.verification_report()
+        self.assertTrue(rows)
+        for row in rows:
+            self.assertTrue(row["checked"])
+            self.assertEqual(row["source_kind"], "媒体转述", row["source"])
+
+    def test_source_kind_detects_official_domains(self):
+        pi = sources.policy_impact
+        self.assertEqual(pi.source_kind("https://www.federalreserve.gov/x"), "官方原文")
+        self.assertEqual(pi.source_kind("https://home.treasury.gov/news"), "官方原文")
+        self.assertEqual(pi.source_kind("http://www.pbc.gov.cn/a"), "官方原文")
+        self.assertEqual(pi.source_kind("https://news.qq.com/rain/a/1"), "媒体转述")
+        self.assertEqual(pi.source_kind("https://federalreserve.gov.evil.com/x"), "媒体转述")
+
+    def test_parse_date_formats(self):
+        parse = sources.policy_impact.parse_date
+        self.assertEqual(parse("2026-10-20"), "2026-10-20")
+        self.assertEqual(parse("2026年10月20日"), "2026-10-20")
+        self.assertEqual(parse("2026/1/5"), "2026-01-05")
+        self.assertEqual(parse("October 20, 2026"), "2026-10-20")
+        self.assertEqual(parse("Fri, 16 Oct 2026 13:45:00 +0200"), "2026-10-16")
+        self.assertEqual(parse("没有日期"), "")
+
+    def test_parse_links_keeps_only_official_policy_links(self):
+        pi = sources.policy_impact
+        fed = pi._BY_KEY["fed"]
+        items = pi.parse_links(self.FED_HTML, fed)
+        urls = [item["url"] for item in items]
+        self.assertIn("https://www.federalreserve.gov/newsevents/pressreleases/monetary20261020a.htm", urls)
+        self.assertTrue(all("evil.example.com" not in url for url in urls))     # 非官方域名丢弃
+        self.assertTrue(all("aboutthefed" not in url for url in urls))          # 不像政策文件丢弃
+        self.assertTrue(all(item["date"] for item in items))                    # 没日期丢弃
+        first = next(item for item in items if "monetary" in item["url"])
+        self.assertEqual(first["date"], "2026-10-20")
+
+    def test_parse_links_accepts_press_path_without_keywords(self):
+        pi = sources.policy_impact
+        html = ('<div><a href="https://home.treasury.gov/news/press-releases/sb0234">'
+                'Treasury Announces Marketable Borrowing Estimates</a><span>2026-10-22</span></div>'
+                '<div><a href="https://home.treasury.gov/about/general-information">'
+                'Role of the Treasury</a><span>2026-10-21</span></div>')
+        items = pi.parse_links(html, pi._BY_KEY["ust"])
+        self.assertEqual([item["date"] for item in items], ["2026-10-22"])
+
+    def test_parse_rss(self):
+        pi = sources.policy_impact
+        items = pi.parse_rss(self.RSS_XML, pi._BY_KEY["ecb"])
+        self.assertEqual(len(items), 2)
+        self.assertEqual(items[0]["date"], "2026-10-16")
+
+    def test_classify_policy(self):
+        pi = sources.policy_impact
+        self.assertEqual(pi.classify_policy("FOMC statement on target range")["dimension"], "货币政策 · 美联储")
+        self.assertEqual(pi.classify_policy("关于调整 LPR 报价的公告")["dimension"], "央行 · 流动性")
+        self.assertEqual(pi.classify_policy("关于优化房地产信贷政策的通知")["dimension"], "地产与地方政策")
+        self.assertIn("dimension", pi.classify_policy("一份没有关键词的文件"))
+
+    def test_fetch_official_records_each_source_status(self):
+        pi = sources.policy_impact
+        old = pi.GET_TEXT
+
+        def fake(url):
+            if "federalreserve" in url:
+                return self.FED_HTML
+            if "ecb" in url:
+                return self.RSS_XML
+            raise OSError("blocked")
+
+        pi.GET_TEXT = fake
+        try:
+            payload = pi.fetch_official(as_of=date(2026, 10, 28))
+        finally:
+            pi.GET_TEXT = old
+        by_key = {row["key"]: row for row in payload["sources"]}
+        self.assertEqual(by_key["fed"]["status"], "ok")
+        self.assertEqual(by_key["ecb"]["status"], "ok")
+        self.assertEqual(by_key["boj"]["status"], "error")          # 单源失败不影响其它
+        self.assertEqual(by_key["pbc"]["status"], "manual")        # 只登记入口
+        self.assertIn("oserror", by_key["boj"]["note"].lower())
+        # 窗口 45 天：2026-10-20 / 10-18 在内，2025-01-01 的 ECB 旧决议被丢掉
+        dates = sorted(item["date"] for item in payload["items"])
+        self.assertEqual(dates, ["2026-10-16", "2026-10-18", "2026-10-20"])
+        self.assertTrue(all(pi.is_official_url(item["url"]) for item in payload["items"]))
+
+    def test_auto_releases_do_not_move_scores(self):
+        pi = sources.policy_impact
+        payload = {"fetched_at": "2026-10-28 09:00", "ok": 1, "error": 0, "manual": 1, "empty": 0,
+                   "window": "2026-09-14 至 2026-10-28",
+                   "sources": [{"key": "fed", "issuer": "美联储 FOMC", "domain": "www.federalreserve.gov",
+                                "entry": "https://www.federalreserve.gov/newsevents/pressreleases.htm",
+                                "status": "ok", "note": "窗口内 1 条"}],
+                   "items": [{"title": "Federal Reserve issues FOMC statement", "date": "2026-10-20",
+                              "source": "fed",
+                              "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20261020a.htm"}]}
+        plain = pi.analyze_policy_market_impact(as_of=date(2026, 10, 28), use_cache=False)
+        withauto = pi.analyze_policy_market_impact(as_of=date(2026, 10, 28), official=payload)
+        self.assertEqual([m["score"] for m in plain["markets"]], [m["score"] for m in withauto["markets"]])
+        self.assertEqual(plain["counts"]["in_window"], withauto["counts"]["in_window"])
+        self.assertEqual(withauto["counts"]["auto"], 1)
+        self.assertEqual(len(withauto["auto_releases"]), 1)
+        self.assertEqual(withauto["auto_releases"][0]["source_kind"] if "source_kind" in withauto["auto_releases"][0] else "官方原文", "官方原文")
+
+    def test_dedupe_against_curated_ledger(self):
+        pi = sources.policy_impact
+        curated = [{"date": "2026-09-16", "dimension": "货币政策 · 美联储", "title": "美联储加息 25bp", "source": "https://a"}]
+        auto = [{"date": "2026-09-16", "dimension": "货币政策 · 美联储", "title": "FOMC statement", "source": "https://b"},
+                {"date": "2026-09-18", "dimension": "货币政策 · 美联储", "title": "BOJ decision", "source": "https://c"}]
+        kept = pi.dedupe_auto(auto, curated)
+        self.assertEqual([row["source"] for row in kept], ["https://c"])
+
+    def test_cache_roundtrip_and_staleness(self):
+        pi = sources.policy_impact
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "cache.json")
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+            payload = {"fetched_at": now, "items": [{"title": "x"}], "sources": []}
+            pi.write_official_cache(payload, path=path)
+            loaded = pi.load_official_cache(path=path, max_age_hours=36)
+            self.assertEqual(loaded["items"], [{"title": "x"}])
+            self.assertLess(loaded["cache_age_hours"], 1)
+            # 过期缓存不能用：宁可显示「未抓取」，也不拿一周前的条目冒充今天抓到的。
+            pi.write_official_cache({"fetched_at": "2020-01-01 00:00", "items": [{"title": "old"}]}, path=path)
+            self.assertIsNone(pi.load_official_cache(path=path, max_age_hours=36))
+            self.assertIsNone(pi.load_official_cache(path=os.path.join(tmp, "missing.json")))
+
+    def test_payload_exposes_verification_block(self):
+        pi = sources.policy_impact
+        out = pi.analyze_policy_market_impact(as_of=date(2026, 10, 28), use_cache=False)
+        official = out["official"]
+        self.assertFalse(official["available"])
+        self.assertEqual(official["registered"], len(pi.OFFICIAL_SOURCES))
+        self.assertIn("官方源", official["status_line"])
+        self.assertTrue(official["entries"])                  # 台账逐条挂官方入口
+        for row in official["entries"]:
+            self.assertTrue(row["entry"].startswith("http"))
+            self.assertEqual(row["source_kind"], "媒体转述")
+
+    def test_display_line_has_numbers_and_failed_sources(self):
+        pi = sources.policy_impact
+        payload = {"fetched_at": "2026-10-28 01:10", "ok": 1, "empty": 1, "error": 2, "manual": 7,
+                   "cache_age_hours": 3.0, "items": [],
+                   "sources": [{"key": "fed", "issuer": "美联储 FOMC", "status": "ok"},
+                               {"key": "ecb", "issuer": "欧洲央行", "status": "empty"},
+                               {"key": "boj", "issuer": "日本央行", "status": "error"},
+                               {"key": "ust", "issuer": "美国财政部", "status": "error"}]}
+        impact = pi.analyze_policy_market_impact(as_of=date(2026, 10, 28), official=payload)
+        official = impact["official"]
+        text = official["display"]
+        self.assertIn("抓通 1", text)
+        self.assertIn("失败 2", text)
+        self.assertIn("仅入口 7", text)
+        self.assertIn("2026-10-28 01:10 UTC", text)
+        self.assertEqual(official["failed"], ["日本央行", "美国财政部"])
+        self.assertNotIn("请", text)                       # 不写操作提示
+        # 过期缓存要自己说出来，不能拿旧数据当今天的
+        stale = dict(payload, cache_age_hours=100.0)
+        self.assertIn("缓存已过期 100 小时",
+                      pi.analyze_policy_market_impact(as_of=date(2026, 10, 28), official=stale)["official"]["display"])
+
+    def test_render_index_section_replaces_only_policy_block(self):
+        pi = sources.policy_impact
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "index.html")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write('<html><body><section id="other"><p>keep</p></section>'
+                         '<section class="x" id="policyDeepSection"><p>old</p></section>'
+                         '<section id="tail"><p>tail</p></section></body></html>')
+            pi.render_index_section(path, as_of=date(2026, 10, 28), official=None)
+            html = open(path, encoding="utf-8").read()
+        self.assertEqual(html.count('id="policyDeepSection"'), 1)
+        self.assertNotIn("<p>old</p>", html)
+        self.assertIn("<p>keep</p>", html)
+        self.assertIn("<p>tail</p>", html)
+        self.assertIn("窗口内政策发布", html)
+
+    def test_official_daily_candidates_are_labelled_and_capped(self):
+        pi = sources.policy_impact
+        brief = {"国务院政策发布": [{"title": "国务院办公厅关于印发促进民间投资若干措施的通知", "url": ""}],
+                 "华尔街见闻": [{"title": "美联储官员称通胀仍然偏高", "url": ""}]}
+        rows = pi.official_daily_candidates(brief, as_of="2026-10-28", limit=3)
+        self.assertEqual(len(rows), 1)                       # 只收官方源
+        self.assertEqual(rows[0]["status"], "待核验发文")
+        self.assertEqual(rows[0]["source"], "国务院政策发布")
 
 
 class BuildHtmlTest(_NewsCardOn, unittest.TestCase):
