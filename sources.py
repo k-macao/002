@@ -39,7 +39,7 @@
     analyze_policy()   : 「AI 政策分析」引擎（政策维度热度 + 多空方向 + 鹰鸽取向；始终附带近30日全球政策
                          对 A股/港股/美股的影响。deep=True 时再叠加知识库检索 / 修饰词口径 / 舆情情感 /
                          传导图谱 / 分析师推理链 / 研报 / LSTM × Prophet）
-    analyze_big_v()    : 「大 V 分析」引擎（江学勤「预测历史」框架启发的政治 / 地缘 / 经济 AI 仿推演；
+    analyze_big_v()    : 「大 V 分析」引擎（「预测历史」框架启发的政治 / 地缘 / 经济 AI 仿推演；
                          结构史观 + 博弈论 + 成本约束 + 历史类比 + 情景证伪，明确非本人发言）
     retrieve_policy_context() : 政策法规知识库检索（RAG 的检索环节，返回历史政策条目与检索理由）
     lstm_policy_forecast()    : 纯 Python 单层 LSTM + BPTT，评估政策后的中长期走势节奏
@@ -1609,7 +1609,7 @@ def analyze_brief(brief: dict, deep_policy: bool = False) -> dict:
 
 
 def analyze_big_v(brief: dict, as_of=None) -> dict:
-    """「大 V 分析」：江学勤「预测历史」框架启发的政治 / 地缘 / 经济 AI 仿推演。
+    """「大 V 分析」：「预测历史」框架启发的政治 / 地缘 / 经济 AI 仿推演。
 
     实现在 :mod:`big_v_analysis`，复用同一批 ``brief`` 标题。这里传入
     :func:`section_of` 仅用于标注来源板块，不改变推演结论。输出为结构化字典，
@@ -5816,8 +5816,7 @@ f'<div class="ftr">近30日只统计已核验发文日的全球政策，已观�
                     for step in (bigv.get("framework_steps") or [])
                 )
                 rows.append(f'<tr><td class="td-n">·</td><td class="td-t">'
-                            f'<div>框架：{_esc(bigv.get("name") or "")}（'
-                            f'{_esc(bigv.get("analyst") or "")}）· 只借鉴可验证方法，不模仿本人语气。</div>'
+                            f'<div>框架：{_esc(bigv.get("name") or "")} · 只借鉴可验证方法，不模仿任何特定个人语气。</div>'
                             f'{step_html}</td></tr>')
 
         rows.append(
@@ -5892,8 +5891,7 @@ f'<div class="ftr">近30日只统计已核验发文日的全球政策，已观�
         )
         return (
             f'<div class="card"><div class="hdr"><span class="tag">大 V 分析</span>'
-            f'<span class="sub">{_esc(bigv.get("analyst") or "")} · '
-            f'{_esc(bigv.get("name") or "")}</span></div>'
+            f'<span class="sub">{_esc(bigv.get("name") or "")}</span></div>'
             f'<div class="txt">{_hl(_esc(bigv.get("headline") or ""))}</div>'
             f'<table class="tbl">{"".join(rows)}</table>'
             f'<div class="ftr">{method_note}</div></div>'

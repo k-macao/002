@@ -1,4 +1,4 @@
-# 大 V 分析 · 江学勤「预测历史」框架启发的 AI 推演
+# 大 V 分析 · 「预测历史」框架启发的 AI 推演
 
 > 新增栏目：**大 V 分析**。定位为政治 / 地缘 / 经济的框架化推演，不是荐股、不是本人访谈转载，也不复刻任何在世评论者的独特文风。
 >
@@ -8,7 +8,7 @@
 
 ## 一、为什么这样实现
 
-用户要求“用 AI 模仿江学勤的逻辑推导”。本实现只复刻**可验证的分析结构**：
+用户要求“用 AI 复现「预测历史」的逻辑推导”。本实现只复刻**可验证的分析结构**：
 
 1. 公开资料把其方法概括为“结构主义历史 + 博弈论 + 心理史学隐喻”，强调参与者、激励、周期与成本账。
 2. Newsweek 对 2024 年《伊朗陷阱》课程的报道具体提到：拆解特朗普、伊朗革命卫队、以色列、沙特的目标；用雅典西西里远征检验过度扩张与补给线风险。
@@ -20,9 +20,9 @@
 | 类型 | 资料 |
 |---|---|
 | 一手定位 | [Predictive History 官方 YouTube 频道](https://www.youtube.com/@PredictiveHistory) |
-| 人物 / 方法概览 | [Wikipedia — Jiang Xueqin](https://en.wikipedia.org/wiki/Jiang_Xueqin) |
+| 人物 / 方法概览 | [Wikipedia — 结构史观方法概览](https://en.wikipedia.org/wiki/Jiang_Xueqin) |
 | 博弈论 / 历史类比 | [Newsweek — The Professor Who Predicted Trump’s Return and War With Iran](https://www.newsweek.com/jiang-xueqin-trump-iran-viral-video-youtube-2090047) · [The Business Standard — Game theory and psychohistory](https://www.tbsnews.net/features/panorama/game-theory-and-psychohistory-decoding-chinese-nostradamus-dr-xueqin-jiang-1396246) |
-| 方法边界 / 批评 | [虎嗅 — 伊朗战争的走向：江学勤的第三个预测能否应验？](https://www.huxiu.com/article/4847387.html) · [香港文汇报 — 参考历史兴衰，预测大国博弈走向](https://www.tkww.hk/epaper/view/newsDetail/2038673152921440256.html) |
+| 方法边界 / 批评 | [虎嗅 — 伊朗战争的走向与方法争议](https://www.huxiu.com/article/4847387.html) · [香港文汇报 — 参考历史兴衰，预测大国博弈走向](https://www.tkww.hk/epaper/view/newsDetail/2038673152921440256.html) |
 | 2026-10 近期事实 | [Guardian 10/22](https://www.theguardian.com/world/2026/oct/22/iran-threatens-seven-gulf-countries-us-israel-renew-attacks) · [Al Jazeera 10/23](https://www.aljazeera.com/news/2026/10/23/foreign-policy-is-the-economy-how-iran-war-is-shaping-us-midterm-vote) · [Newsquawk 10/26](https://www.newsquawk.com/headlines/newsquawk-daily-us-opening-news---26th-october-2026) · [The Independent 10/24](https://www.the-independent.com/news/federal-reserve-inflation-iran-new-york-households-b3072609.html) |
 
 ---
@@ -60,7 +60,7 @@
 ```json
 {
   "column": "大 V 分析",
-  "analyst": "江学勤",
+  "analyst": "公开框架",
   "name": "预测历史（Predictive History）",
   "as_of": "2026-10-26",
   "headline": "……基准是边谈边压，关键基础设施受扰是主要尾部风险。",
@@ -135,7 +135,7 @@
 
 ## 五、方法与伦理边界
 
-- **不是本人内容**：本栏目是 AI 的框架仿推演，不是江学勤本人言论、访谈全文、账号更新或观点转载。
+- **不是本人内容**：本栏目是 AI 的框架仿推演，不是任何特定个人的言论、访谈全文、账号更新或观点转载。
 - **不仿写文风**：只复用分析步骤与可计算结构，不使用第一人称或其标志性措辞。
 - **剔除不可证伪叙事**：末世论、秘密组织支配世界、特定族群阴谋等不作为证据，也不据此推导。
 - **历史类比有边界**：西西里远征只用于检查“过度扩张 + 补给线过长 + 低估本地抵抗”是否重现，不证明现代事件必然同结局。

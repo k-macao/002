@@ -34,4 +34,9 @@ jobs:
           DEAI_MODE: polish
           # DEAI_STRICT: "1"
           # SKIP_DEAI_CHECK: "1"
+          # 推送前「文本内容去 AI 味」闸门（Humanizer-zh 静态规则，见 docs/humanizer_zh.md）：
+          # polish=体检+清理（默认，非阻塞）；audit=只体检；off=跳过。
+          HUMANIZER_MODE: polish
+          # HUMANIZER_STRICT: "1"
+          # SKIP_HUMANIZER_CHECK: "1"
         run: python push_brief.py

@@ -130,6 +130,67 @@
       </article>
     </section>
 
+    <section class="pixel-section" id="humanizerSection" data-column="文本去AI味">
+      <div class="pixel-section-head">
+        <div><h2>推送前 · 文本内容去 AI 味</h2></div>
+        <span class="ai-pill" id="humanizerPill">Humanizer-zh 静态闸门</span>
+      </div>
+      <article class="insight-card deai-card">
+        <p class="deai-lead">按 GitHub 上的 <a href="https://github.com/op7418/Humanizer-zh" target="_blank" rel="noopener noreferrer">op7418/Humanizer-zh</a>、<a href="https://github.com/blader/humanizer" target="_blank" rel="noopener noreferrer">blader/humanizer</a> 与 <a href="https://github.com/jiji262/humanizer-chinese" target="_blank" rel="noopener noreferrer">jiji262/humanizer-chinese</a>（均 MIT）扫描<strong>推送 HTML 与管理页的文字内容</strong>，删除零信息的纯套话（升华结尾、客服腔、假互动、讲义腔路标词），并对每个面出一份文本体检报告。逐字新闻标题、证据行、数字、日期、引号原话与链接全部受保护；签名漂移会整体回滚。</p>
+
+        <div class="deai-scoreboard">
+          <div class="deai-score-cell">
+            <small>两面综合分（体检前）</small>
+            <b id="hzScoreBefore">—</b>
+          </div>
+          <div class="deai-score-arrow" aria-hidden="true">→</div>
+          <div class="deai-score-cell">
+            <small>两面综合分（清理后）</small>
+            <b id="hzScoreAfter">—</b>
+          </div>
+          <div class="deai-score-delta" id="hzScoreDelta">—</div>
+        </div>
+
+        <div class="deai-mode-row">
+          <label for="humanizerMode">本次推送模式</label>
+          <select id="humanizerMode" aria-label="文本去 AI 味模式">
+            <option value="polish">polish · 体检 + 清理（默认）</option>
+            <option value="audit">audit · 只体检不清理</option>
+            <option value="off">off · 跳过文本层闸门</option>
+          </select>
+          <span class="deai-mode-note">运行后端时由前端把此模式随 /api/run 提交；GitHub Actions 由 HUMANIZER_MODE 环境变量控制。</span>
+        </div>
+
+        <div class="deai-surfaces">
+          <div class="deai-surface">
+            <div class="deai-surface-head"><b>推送 HTML</b><span id="hzPushScore">—</span></div>
+            <p class="deai-surface-state" id="hzPushState">等待体检数据…</p>
+          </div>
+          <div class="deai-surface">
+            <div class="deai-surface-head"><b>管理页</b><span id="hzPageScore">—</span></div>
+            <p class="deai-surface-state" id="hzPageState">等待体检数据…</p>
+          </div>
+        </div>
+
+        <div class="deai-findings-wrap">
+          <b>命中模式（可清理 / 需语义判断）</b>
+          <ul class="deai-findings" id="hzFindings">
+            <li>静态快照：尚未连接后端，运行 server.py 后本区显示实时文本体检结果。</li>
+          </ul>
+        </div>
+
+        <details class="deai-details">
+          <summary>保留项（waivers）与方法边界</summary>
+          <ul class="deai-waivers" id="hzWaivers">
+            <li>逐字引用的新闻标题、公文用语、中文破折号与免责说明按上游「不是词语黑名单」原则保留。</li>
+          </ul>
+          <p class="deai-boundary" id="hzBoundary">需要语义判断的模式（假对比、三段式、意义拔高、模糊归因）只检测并报告，不做正则改写；分数是启发式体检分，不是 AI 生成概率。</p>
+        </details>
+
+        <div class="insight-foot" id="hzFoot"><span>规则来源：op7418/Humanizer-zh 等 MIT 项目（Wikipedia Signs of AI writing）· 明确排除 MIT + Non-Commercial 的 swaylq/humanize-chinese，不引入其代码或词表。零第三方依赖、可离线运行。静态快照 2026-10-27；实时报告见 <code>/api/humanizer</code>。</span></div>
+      </article>
+    </section>
+
     <section class="pixel-section">
       <div class="pixel-section-head">
         <div><h2>AI 每日总结</h2></div>
@@ -454,15 +515,15 @@
     <section class="pixel-section" id="bigVAnalysisSection" data-column="大V分析">
       <div class="pixel-section-head">
         <div><h2>大 V 分析</h2></div>
-        <span class="ai-pill" id="bigVPill">江学勤 · 预测历史框架</span>
+        <span class="ai-pill" id="bigVPill">预测历史框架</span>
       </div>
       <article class="insight-card bigv-card">
         <div class="bigv-notice">
-          <b>AI 框架仿推演</b>：用 AI 模仿江学勤「预测历史」的<strong>逻辑推导</strong>，只借鉴公开资料中可验证的结构史观、博弈论、成本账、历史类比与情景证伪；不模仿其语气，不代表本人观点、原话或背书。不可证伪的末世论 / 秘密组织叙事不进入推演。
+          <b>AI 框架仿推演</b>：用 AI 复现「预测历史」框架的<strong>逻辑推导</strong>，只借鉴公开资料中可验证的结构史观、博弈论、成本账、历史类比与情景证伪；不模仿其语气，不代表本人观点、原话或背书。不可证伪的末世论 / 秘密组织叙事不进入推演。
         </div>
 
         <p class="bigv-headline" id="bigVHeadline">
-          <mark>2026-10-26 总判断</mark>：近期主线不是一场孤立冲突，而是「国内政治激励 → 中东能源杠杆 → 通胀 / 利率约束 → 财政与 AI 资本开支再定价」的连锁博弈。美国选举周期、伊朗对霍尔木兹与海湾基础设施的非对称威胁、主要央行决策周被同一条成本链连接；基准情景是“边谈边压”，升级尾部风险没有消失。
+          <mark>2026-10-26 总判断</mark>：近期主线是一条连锁博弈：国内政治激励 → 中东能源杠杆 → 通胀 / 利率约束 → 财政与 AI 资本开支再定价。美国选举周期、伊朗对霍尔木兹与海湾基础设施的非对称威胁、主要央行决策周被同一条成本链连接；基准情景是“边谈边压”，升级尾部风险没有消失。
         </p>
         <div class="bigv-meta" id="bigVMeta">
           <span class="meta-tag">近期政治</span><span class="meta-tag neutral">地缘博弈</span><span class="meta-tag neutral">全球经济</span>
@@ -512,7 +573,7 @@
             <div class="bigv-chain">油价 / 运费 → 通胀预期 → 长端利率 → 资本开支</div>
             <p>Brent 在 10 月 22 日约 113 美元、26 日回撤到约 110 美元；市场同时等待 FOMC、ECB、BoJ 决策。美国汽油均价升破 4.27 美元 / 加仑，能源冲击已传导到消费与通胀预期。央行难以用降息解决供给冲击，若长端利率维持高位，财政利息、AI 数据中心融资和高估值成长股会一起承压。</p>
             <ul>
-              <li><b>推导：</b>更可信的结果不是单一“泡沫破裂”，而是利润率、融资条件与能源自给度的分层再定价。</li>
+              <li><b>推导：</b>更可信的结果是利润率、融资条件与能源自给度的分层再定价；单一“泡沫破裂”不足以概括。</li>
               <li><b>证伪：</b>油价持续回落且通胀预期稳定，央行明确转鸽，AI 资本开支与融资利差未恶化。</li>
             </ul>
             <ul class="sector-evidence">
