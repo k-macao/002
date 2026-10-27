@@ -738,28 +738,6 @@ mark.press { background: var(--gray-light); color: var(--gray-dark); }
   .impact-board { grid-template-columns: 1fr; }
 }
 
-/* AI 政策研报卡片：思维导图树（根节点 + 分支 + 子节点），与简报的缩进树同口径 */
-.mm-root {
-  margin-top: 4px;
-  padding: 5px 8px;
-  border-left: 3px solid var(--green);
-  background: var(--paper-lift);
-  border-radius: 0 6px 6px 0;
-}
-
-.mm-root .mm-node { color: var(--ink); font-size: 12px; font-weight: 700; }
-
-.mm-tree { display: block; min-width: 0; }
-
-.mm-tree .mm-node {
-  display: block;
-  padding: 1px 0;
-  color: var(--ink-soft);
-  font-size: 11px;
-  line-height: 1.65;
-  word-break: break-all;
-}
-
 .insight-foot code {
   padding: 0 4px;
   background: var(--gray-light);

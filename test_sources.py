@@ -850,7 +850,7 @@ class PolicySectionTest(unittest.TestCase):
         self.assertIn("政策净空", out)
         self.assertIn("偏鹰", out)
         self.assertIn("条政策提及", out)
-        # 位置：「AI 每日总结 → AI 看盘」之后，其后依次是「AI 政策深度」「AI 政策研报」，再到「AI 板块机会」。
+        # 位置：「AI 每日总结 → AI 看盘」之后，其后是「AI 政策深度」，再到「AI 板块机会」。
         # 用卡片标题标签定位（正文里也会互相引用板块名，裸文本匹配不可靠）。
         def at(label: str) -> int:
             return out.index(f'<span class="tag">{label}</span>')
@@ -858,8 +858,8 @@ class PolicySectionTest(unittest.TestCase):
         self.assertLess(at("AI 每日总结"), at("AI 看盘"))
         self.assertLess(at("AI 看盘"), at("AI 政策分析"))
         self.assertLess(at("AI 政策分析"), at("AI 政策深度"))
-        self.assertLess(at("AI 政策深度"), at("AI 政策研报"))
-        self.assertLess(at("AI 政策研报"), at("AI 板块机会"))
+        self.assertLess(at("AI 政策深度"), at("AI 板块机会"))
+        self.assertNotIn("AI 政策研报", out)          # 2026-10-28 起整栏下线
 
     def test_build_html_policy_card_honest_when_no_signals(self):
         out = sources.build_html({"金十数据": [{"title": "今天天气不错", "url": ""}]}, **self._kanpan())
@@ -1274,11 +1274,22 @@ class PolicyDeepWiringTest(unittest.TestCase):
         brief = {"华尔街见闻 快讯": [{"title": "美联储鹰派转向，暗示继续加息缩表", "url": ""}],
                  "国务院 政策解读": [{"title": "有关负责人解读：政策支持实体经济发展", "url": ""}]}
         policy = sources.analyze_policy(brief)          # deep 默认开启
-        for key in ("kb", "modifiers", "sentiment", "graph", "reasoning", "mindmap", "research", "models"):
+        for key in ("kb", "modifiers", "sentiment", "graph", "reasoning"):
             self.assertIn(key, policy)
         self.assertEqual(len(policy["reasoning"]["steps"]), 4)
-        self.assertIn("lstm", policy["models"])
-        self.assertIn("prophet", policy["models"])
+        # 「AI 政策研报」整栏下线：思维导图 / 结构化研报 / LSTM·Prophet 不再随接口返回。
+        for key in ("mindmap", "research", "models"):
+            self.assertNotIn(key, policy)
+
+    def test_analyze_policy_deep_models_are_opt_in_for_offline_reuse(self):
+        brief = {"华尔街见闻 快讯": [{"title": "美联储鹰派转向，暗示继续加息缩表", "url": ""}]}
+        policy = sources.analyze_policy(brief, series=sources.synthetic_policy_series())
+        deep = sources.analyze_policy_deep(policy, brief, series=sources.synthetic_policy_series(),
+                                           include_models=True)
+        self.assertIn("mindmap", deep)
+        self.assertIn("research", deep)
+        self.assertIn("lstm", deep["models"])
+        self.assertIn("prophet", deep["models"])
         self.assertLessEqual(len(policy["headline"]), 200)   # 总结句口径不受深度层影响
 
     def test_analyze_brief_stays_shallow_by_default(self):
@@ -1294,17 +1305,19 @@ class PolicyDeepWiringTest(unittest.TestCase):
             return out.index(f'<span class="tag">{label}</span>')
 
         positions = [at(label) for label in ("AI 每日总结", "AI 看盘", "AI 政策分析", "AI 政策深度",
-                                             "AI 政策研报", "AI 板块机会")]
+                                             "AI 板块机会")]
         self.assertEqual(positions, sorted(positions))
 
     def test_build_html_renders_deep_layer_blocks(self):
         brief = {name: sources._demo_items(name) for name in sources.SOURCES}
         out = sources.build_html(brief, **self._kanpan())
         for token in ("政策法规知识库检索", "政策术语口径（修饰词解读）", "政策舆情情感打分",
-                      "政策传导图谱", "分析师推理链", "政策影响思维导图", "LSTM · 中长期走势节奏",
-                      "Prophet 式分解 · 剥离季节看政策窗口", "政策影响研报（结构化结论）",
-                      "长远冲击", "风险提示", "政策窗口期"):
+                      "政策传导图谱", "分析师推理链"):
             self.assertIn(token, out)
+        # 「AI 政策研报」整栏下线：思维导图 / LSTM·Prophet / 结构化研报都不再出现。
+        for gone in ("政策影响思维导图", "LSTM · 中长期走势节奏", "Prophet 式分解",
+                     "政策影响研报（结构化结论）", "长远冲击"):
+            self.assertNotIn(gone, out)
         for hidden in ("关键表述：", "背景知识：", "历史市场含义：", "LLM 对比分析"):
             self.assertNotIn(hidden, out)
         term_start = out.index("政策术语口径（修饰词解读）")
@@ -1318,19 +1331,12 @@ class PolicyDeepWiringTest(unittest.TestCase):
                  for label in ("宏观背景", "行业限制", "资金流向", "受益板块")]
         self.assertEqual(steps, sorted(steps))
 
-    def test_build_html_marks_synthetic_model_series(self):
+    def test_build_html_omits_retired_research_models(self):
+        # 2026-10-28 起「AI 政策研报」整栏下线：推送里不再有时序模型与研报正文，也不展示序列来源。
         brief = {"金十数据": [{"title": "央行降准降息，流动性宽松利好成长板块", "url": ""}]}
         out = sources.build_html(brief, **self._kanpan())
-        self.assertIn("合成演示序列", out)
-
-    def test_build_html_uses_injected_series(self):
-        brief = {"金十数据": [{"title": "央行降准降息，流动性宽松利好成长板块", "url": ""}]}
-        closes = [3800 + i * 4 for i in range(40)]
-        dates = [f"2026-07-{i + 1:02d}" for i in range(40)]
-        out = sources.build_html(brief, series={"name": "上证指数", "source": "eastmoney",
-                                               "dates": dates, "closes": closes}, **self._kanpan())
-        self.assertIn("上证指数", out)
-        self.assertNotIn("合成演示序列（无实时行情）", out)
+        for gone in ("AI 政策研报", "LSTM", "Prophet", "思维导图", "合成演示序列"):
+            self.assertNotIn(gone, out)
 
     def test_deep_layer_escapes_html(self):
         brief = {"金十数据": [{"title": "美联储 <script>alert(1)</script> 加息，监管从严", "url": ""}]}
@@ -1343,7 +1349,7 @@ class PolicyDeepWiringTest(unittest.TestCase):
                  for name in sources.SOURCES}
         tight = sources.build_html(brief, max_length=16000, **self._kanpan())
         self.assertLessEqual(len(tight), 16000)
-        self.assertNotIn("AI 政策研报", tight)            # 深度层让位，主分析卡片保留
+        self.assertNotIn("AI 政策研报", tight)            # 研报栏目已下线，主分析卡片保留
         self.assertIn("AI 政策分析", tight)
 
 
@@ -1444,7 +1450,7 @@ class PolicyMarketImpactTest(unittest.TestCase):
 
     def test_build_html_leads_policy_deep_with_thirty_day_impact(self):
         out = sources.build_html({"金十数据": [{"title": "今天天气不错", "url": ""}]})
-        deep = out[out.index("AI 政策深度"):out.index("AI 政策研报")]
+        deep = out[out.index("AI 政策深度"):out.index("AI 板块机会")]
         self.assertIn("近30日全球政策 → 股市影响", deep)
         self.assertLess(deep.index("近30日全球政策"), deep.index("政策法规知识库检索"))
         for token in ("A股", "港股", "美股", "窗口内政策发布", "板块传导"):
@@ -1922,7 +1928,7 @@ class BuildHtmlTest(_NewsCardOn, unittest.TestCase):
 
         # 「AI 量化日报」放最开头（紧随刊头），其后才是叙事型栏目。
         order = ["AI 量化日报", "AI 每日总结", "AI 看盘", "AI 情绪热力图", "AI 政策分析",
-                 "AI 政策深度", "AI 政策研报", "AI 板块机会", "大 V 分析", "全网快讯"]
+                 "AI 政策深度", "AI 板块机会", "大 V 分析", "全网快讯"]
         positions = [at(label) for label in order]
         self.assertEqual(positions, sorted(positions), "板块顺序应为 " + " → ".join(order))
         between = out[at("AI 每日总结"):at("AI 看盘")]
@@ -2110,14 +2116,14 @@ class BuildHtmlTest(_NewsCardOn, unittest.TestCase):
 
         full = sources.build_html(brief, **self._kanpan())
         self.assertEqual(news_count(full), n * 3)
-        self.assertIn("政策影响思维导图", full)          # 政策深度层全量
+        self.assertIn("板块传导", full)                  # 政策深度层全量
         two = shrink(full)
         self.assertEqual(news_count(two), n * 2)
         one = shrink(two)
         self.assertEqual(news_count(one), n)
         compact = shrink(one)
-        # 快讯已到每源 1 条，再压就先降政策深度层档位：思维导图与背景长文让位，快讯条数回到每源 3 条。
-        self.assertNotIn("政策影响思维导图", compact)
+        # 快讯已到每源 1 条，再压就先降政策深度层档位：舆情节选 / 传导图谱 / 板块传导让位，快讯条数回到每源 3 条。
+        self.assertNotIn("板块传导", compact)
         self.assertIn("AI 政策深度", compact)
         self.assertGreaterEqual(news_count(compact), n)
         slim = compact

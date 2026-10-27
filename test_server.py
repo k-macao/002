@@ -183,14 +183,15 @@ class ServerSmokeTest(unittest.TestCase):
         self.assertEqual(status, 200)
         data = json.loads(raw)
         for key in ("buckets", "stance", "headline", "market_impact", "kb", "modifiers", "sentiment",
-                    "graph", "reasoning", "mindmap", "research", "models"):
+                    "graph", "reasoning"):
             self.assertIn(key, data)
+        # 「AI 政策研报」整栏下线：接口不再返回思维导图 / 结构化研报 / 时序模型。
+        for key in ("mindmap", "research", "models"):
+            self.assertNotIn(key, data)
         self.assertIn("releases", data["market_impact"])
         self.assertIn("markets", data["market_impact"])
         self.assertEqual([step["label"] for step in data["reasoning"]["steps"]],
                          ["宏观背景", "行业限制", "资金流向", "受益板块"])
-        self.assertIn("lstm", data["models"])
-        self.assertIn("prophet", data["models"])
         # ?deep=0 只要基础统计（不跑知识库检索与模型），响应更快。
         status, raw = request(self.base, "GET", "/api/policy?deep=0")
         shallow = json.loads(raw)
@@ -312,9 +313,10 @@ class MockedPushTest(unittest.TestCase):
                 self.assertIn("AI 板块机会", payload["content"])  # 板块机会清单随简报一同推送
                 self.assertIn("AI 政策分析", payload["content"])  # 政策面板块（鹰鸽取向）同样随简报推送
                 self.assertIn("大 V 分析", payload["content"])  # 新增框架推演栏目同样随简报推送
-                # 「AI 看盘」紧跟「AI 每日总结」；政策分析在其后，再接深度层与研报两张卡片。
-                for card in ("AI 看盘", "AI 政策深度", "AI 政策研报"):
+                # 「AI 看盘」紧跟「AI 每日总结」；政策分析在其后，再接深度层，「AI 政策研报」已整栏下线。
+                for card in ("AI 看盘", "AI 政策深度"):
                     self.assertIn(card, payload["content"])
+                self.assertNotIn("AI 政策研报", payload["content"])
                 content = payload["content"]
                 self.assertLess(content.index('<span class="tag">AI 每日总结</span>'),
                                 content.index('<span class="tag">AI 看盘</span>'))

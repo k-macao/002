@@ -555,47 +555,6 @@
 
     <section class="pixel-section">
       <div class="pixel-section-head">
-        <div><h2>AI 政策研报</h2></div>
-        <span class="ai-pill">LSTM × Prophet</span>
-      </div>
-      <article class="insight-card">
-        <p class="policy-headline"><mark class="press">政策承压（偏空）</mark>，收紧 / 管制取向且政策面净空占优；当日覆盖 40 个数据源、115 条提及，取向<mark class="press">偏鹰</mark>（鹰派 21 : 鸽派 4），政策面多空 15 : 19，时间尺度为短期 1-4 周、中期 1-6 个月、长期 6-36 个月。</p>
-        <ul class="insight-points sector-points">
-          <li class="group-row"><span class="group-label">政策影响思维导图</span><span class="group-note" data-meta="1">根节点 = 当日政策主线 · 8 个分析维度</span></li>
-          <li class="mm-root"><span class="mm-node">▣ AI 政策分析 · 地缘与贸易政策</span></li>
-          <li><span class="point-no">·</span><span class="point-label">宏观背景</span><span class="mm-tree"><span class="mm-node">├─ 热度集中在「地缘与贸易政策、资本市场监管、财政」（40 源 · 115 条）</span><span class="mm-node">├─ 取向偏鹰（鹰派 21 : 鸽派 4）</span><span class="mm-node">└─ 术语口径中性（加权强度 -0.67）</span></span></li>
-          <li><span class="point-no">·</span><span class="point-label press">行业限制</span><span class="mm-tree"><span class="mm-node">├─ 地缘与贸易政策 政策净空 7 · 偏鹰</span><span class="mm-node">├─ 资本市场监管 政策净空 3 · 中性</span><span class="mm-node">└─ 其余行业影响待当日政策信号确认</span></span></li>
-          <li><span class="point-no">·</span><span class="point-label">资金流向</span><span class="mm-tree"><span class="mm-node">├─ 政策面多空 15 : 19（34 条信号）</span><span class="mm-node">├─ 偏向：货币政策、汇率与外汇干预</span><span class="mm-node">└─ 回避：地缘与贸易政策、资本市场监管</span></span></li>
-          <li><span class="point-no">·</span><span class="point-label">受益与承压板块</span><span class="mm-tree"><span class="mm-node">├─ 受益：全球风险资产、贵金属、出口链</span><span class="mm-node">└─ 承压：地缘与贸易政策、资本市场监管</span></span></li>
-          <li><span class="point-no">·</span><span class="point-label">产业链传导</span><span class="mm-tree"><span class="mm-node">├─ 白宫 / 商务部 → 半导体设备、存储芯片、军工 → 出口管制清单 → 终端成本</span><span class="mm-node">└─ 证监会 / 交易所 → 券商、高股息蓝筹、中小市值题材 → 发行上市准入 → 市场估值中枢</span></span></li>
-          <li><span class="point-no">·</span><span class="point-label">政策窗口期</span><span class="mm-tree"><span class="mm-node">└─ 预期差（官媒口径中性 / 市场解读负向）+0.37，细则落地前后常收敛</span></span></li>
-          <li><span class="point-no">·</span><span class="point-label">模型视角</span><span class="mm-tree"><span class="mm-node">├─ LSTM：10 日累计 +0.43%（上行），动能衰减，政策情景（偏紧）相对基线 -0.09pct</span><span class="mm-node">└─ Prophet 式分解：趋势 +5.83%、周度季节振幅 0.22%、政策窗口内 / 外波动 1.41×</span></span></li>
-          <li class="group-row"><span class="group-label">LSTM · 中长期走势节奏</span><span class="group-note" data-meta="1">纯 Python 单层 LSTM + BPTT · 隐藏单元 3 · 回看 5 步 · 外推 10 日 · 样本 60 根日 K（合成演示序列，无实时行情）</span></li>
-          <li><span class="point-no">L</span><span class="point-label" data-meta="1">模型情景</span><span><mark>10 日累计 +0.43%</mark><span class="sector-stat">上行 · 前 3 日 +0.15% / 4-7 日 +0.32% · 全程同向未出现拐点 · 动能衰减</span>
-            <ul class="sector-evidence">
-              <li>· 政策情景输入偏移 -0.69（鹰鸽取向 + 修饰词强度）→ 相对基线偏移 -0.09 个百分点</li>
-              <li>· 训练样本 54 窗 · 30 轮 · 损失 0.527 → 0.501；模型情景非预测，仅供参考、不作为投资依据</li>
-            </ul></span></li>
-          <li class="group-row"><span class="group-label">Prophet 式分解 · 剥离季节看政策窗口</span><span class="group-note" data-meta="1">趋势 + 季节性（周度傅里叶）+ 政策突变哑变量 · 岭回归拟合</span></li>
-          <li><span class="point-no">P</span><span class="point-label">分解结果</span><span><mark>样本内趋势 +5.83%</mark><span class="sector-stat">当前 -0.084%/日 · 周度季节振幅 0.22% · 去季节化残差波动 0.36%/日 · R² 0.969</span>
-            <ul class="sector-evidence">
-              <li>· 政策效应（事件研究口径 / 回归口径）：2026-06-15 -1.53% / -0.56%（负向冲击）</li>
-              <li>· 政策窗口内 / 外波动 1.41×；10 日去季节化外推累计 -1.17%</li>
-            </ul></span></li>
-          <li class="group-row"><span class="group-label press">长远冲击评估</span><span class="group-note" data-meta="1">结构性 vs 周期性 · 沿产业链传导路径与时间尺度评估</span></li>
-          <li><span class="point-no">01</span><span class="point-label press">净空 · 结构性</span><span>半导体设备、存储芯片、军工<span class="sector-stat">6-36 个月 · 出口管制清单 → 供应链改道 → 终端成本</span></span></li>
-          <li><span class="point-no">02</span><span class="point-label press">净空 · 结构性</span><span>券商、高股息蓝筹、中小市值题材<span class="sector-stat">12-36 个月 · 发行上市准入与退市规则 → 筹码供给 → 估值中枢</span></span></li>
-          <li><span class="point-no">03</span><span class="point-label press">净空 · 结构性</span><span>基建、设备制造、消费<span class="sector-stat">6-24 个月 · 赤字与专项债额度 → 项目资本金 → 钢材水泥需求</span></span></li>
-          <li><span class="point-no">04</span><span class="point-label">净多 · 周期性</span><span>全球风险资产、贵金属、出口链<span class="sector-stat">3-12 个月 · 联邦基金利率 → 外资流向 → 科技成长估值</span></span></li>
-          <li class="group-row"><span class="group-label press">风险提示</span><span class="group-note" data-meta="1">政策口径回摆与样本外事件</span></li>
-          <li><span class="point-no">!</span><span class="point-label press">风险</span><span>收紧取向若被数据强化，高估值与利率敏感方向存在二次调整风险；官媒口径与市场化解读情绪分歧较大（+0.37），政策口径回摆可能放大波动。</span></li>
-        </ul>
-        <div class="insight-foot" data-meta="1"><span data-meta="1">LSTM 捕捉时间序列的非线性与长期依赖、评估政策后的中长期节奏；Prophet 式加性分解剥离季节性后度量政策窗口期的中期波动。以上为模型化统计与推演，仅供参考、不作为投资依据；政策细则以官方原文为准</span></div>
-      </article>
-    </section>
-
-    <section class="pixel-section">
-      <div class="pixel-section-head">
         <div><h2>AI 板块机会</h2></div>
         <span class="ai-pill">信号排行</span>
       </div>

@@ -55,7 +55,7 @@
     check_market_freshness() : 大盘数据新鲜度检查（推送前闸门：不是最新就不推）
     collect_market_for_push(): 推送入口专用，一次抓取返回 (market, freshness)
     build_html(brief)  : 由采集结果生成适合微信阅读的 HTML 简报（「AI 每日总结 → AI 看盘 → AI 情绪热力图
-                         → AI 政策分析 → AI 政策深度 → AI 政策研报 → AI 板块机会 → 大 V 分析」，正文最后追加
+                         → AI 政策分析 → AI 政策深度 → AI 板块机会 → 大 V 分析」，正文最后追加
                          「全网快讯」列表：每源 3 条、跨源去重、不标注来源）
 """
 from __future__ import annotations
@@ -2433,9 +2433,10 @@ def analyze_policy(brief: dict, series: dict | None = None, deep: bool = True) -
     """「AI 政策分析」引擎：政策维度热度 + 多空方向 + 鹰鸽取向（全部来自真实抓取标题）。
 
     ``deep=True``（默认）时再叠加深度层 :func:`analyze_policy_deep`：政策法规知识库检索与对比、
-    修饰词术语口径、政策舆情情感打分、政策传导图谱、四步分析师推理链、思维导图、政策影响研报，
-    以及 LSTM + Prophet 式两个时序模型（``series`` 缺省时由 :func:`get_policy_series` 决定：
-    推送路径缓存的真实日 K，否则明确标注的合成演示序列）。
+    修饰词术语口径、政策舆情情感打分、政策传导图谱、四步分析师推理链。
+
+    2026-10-28 起「AI 政策研报」栏目下线：思维导图、结构化政策影响研报、LSTM / Prophet 式
+    时序模型不再随接口与推送返回（``series`` 参数保留给离线复用）。
 
     返回：
         buckets      命中的政策维度（按热度排序），每项含 tag / stance / hawk / dove / up / down /
@@ -2458,9 +2459,6 @@ def analyze_policy(brief: dict, series: dict | None = None, deep: bool = True) -
         sentiment    政策舆情情感打分 {overall, official, market, gap, items, window}
         graph        政策传导图谱 {chains, nodes, edges}
         reasoning    四步分析师推理链 {steps[{no, key, label, text, evidence}], confidence}
-        mindmap      政策影响思维导图 {root, branches[{label, children}]}
-        research     结构化政策影响研报 {title, rating, abstract, long_term, risks, watch_window, ...}
-        models       时序模型 {series, shock, lstm, prophet}
     """
     tags = [tag for tag, _ in _POLICY_BUCKETS]
     bucket_sources = {tag: set() for tag in tags}
@@ -2622,17 +2620,15 @@ def _compose_policy_headline(data: dict) -> str:
 #   ① 政策法规知识库检索（RAG）：央行报告 / 财政部文件 / 监管规章 / 境外央行决议作为企业知识库，
 #      解读新政策时先从库中检索关联的历史政策与背景知识，再与新信号做对比分析
 #      （_POLICY_KB → retrieve_policy_context() → policy_knowledge()）
-#   ② 高级分析师推理链：宏观背景 → 行业限制 → 资金流向 → 受益板块（analyze_policy_reasoning()），
-#      并自动生成结构化政策影响研报（policy_research_note()）与思维导图（policy_mindmap()）
+#   ② 高级分析师推理链：宏观背景 → 行业限制 → 资金流向 → 受益板块（analyze_policy_reasoning()）
 #   ③ 金融术语口径（模拟国内金融巨头基于开源模型微调的金融专有大模型）：对「稳健 / 适度 / 从严」
 #      等修饰词按经济学 + 法学双维解读（interpret_policy_modifiers()），比通用词频统计更贴近市场含义
 #   ④ 政策舆情情感打分：政策发布后的新闻舆情与官媒解读按 正向 / 中性 / 负向 即时打分，
 #      并用「官媒口径 vs 市场解读」的预期差捕捉政策窗口期（analyze_policy_sentiment()）
 #   ⑤ 政策传导图谱：政策主体 → 受影响行业 → 产业链上下游节点串成一张图（policy_chain_graph()）
-#   ⑥ LSTM：纯 Python 实现的单层 LSTM + BPTT 训练，捕捉时间序列的非线性与长期依赖，
-#      评估重大政策后的中长期走势节奏（lstm_policy_forecast()）
-#   ⑦ Prophet + ML 增强：趋势 + 季节性 + 政策突变（政策事件哑变量）的加性分解回归，
-#      剥离季节性后度量政策窗口期的中期波动（prophet_policy_decompose()）
+#   ⑥⑦ LSTM / Prophet 式时序模型（lstm_policy_forecast() / prophet_policy_decompose()）
+#      仅供离线复用：「AI 政策研报」栏目 2026-10-28 已下线，接口与推送不再组装这两块，
+#      也不再默认抓日 K；保留函数是为了历史回测与单元测试。
 # 诚实原则与其余板块一致：样本不足时如实标注「数据缺口」，模型输出标注为模型情景，不编造结论。
 
 # ---------------------------------------------------------------- ① 政策法规知识库（RAG）
@@ -3978,11 +3974,14 @@ def _policy_shock_scalar(policy: dict, modifiers: dict | None = None) -> float:
 
 
 def analyze_policy_deep(policy: dict, brief: dict | None = None, series: dict | None = None,
-                        top_k: int = 3) -> dict:
-    """②-⑦深度层组装：知识库检索 + 修饰词口径 + 舆情情感 + 传导图谱 + 推理链 + 研报 + 模型。
+                        top_k: int = 3, include_models: bool = False) -> dict:
+    """深度层组装：知识库检索 + 修饰词口径 + 舆情情感 + 传导图谱 + 推理链。
 
-    ``policy`` 为 :func:`analyze_policy` 的基础统计结果；``series`` 缺省时由
-    :func:`get_policy_series` 决定（推送路径的缓存日 K，否则合成演示序列）。
+    ``policy`` 为 :func:`analyze_policy` 的基础统计结果。
+
+    2026-10-28 起「AI 政策研报」栏目下线（思维导图 / LSTM × Prophet 式分解 / 结构化研报），
+    这三块默认不再组装，接口与推送都不再返回。需要离线复用时可显式传
+    ``include_models=True``（``series`` 缺省时由 :func:`get_policy_series` 决定）。
     """
     kb = policy_knowledge(policy, top_k=top_k)
     query, _tags = _policy_kb_query(policy or {})
@@ -3998,24 +3997,25 @@ def analyze_policy_deep(policy: dict, brief: dict | None = None, series: dict | 
                                  "当日新闻以管制 / 收紧类表述为主，而引用的政策原文口径相反，方向以表述变化为准。）")
     sentiment = analyze_policy_sentiment(brief or {})
     graph = policy_chain_graph(policy)
-    models_series = series or get_policy_series()
-    shock = _policy_shock_scalar(policy, modifiers)
-    events = [hit["date"] for hit in kb.get("hits", [])]
-    events.append(str((models_series or {}).get("event_date") or ""))
-    models = {
-        "series": {k: models_series.get(k) for k in ("name", "source", "note", "event_date")}
-        | {"points": len(models_series.get("closes") or [])},
-        "shock": shock,
-        "lstm": lstm_policy_forecast(models_series, shock=shock),
-        "prophet": prophet_policy_decompose(models_series, events=[e for e in events if e]),
-    }
     reasoning = analyze_policy_reasoning(policy, kb, sentiment, graph, modifiers)
-    return {
-        "kb": kb, "modifiers": modifiers, "sentiment": sentiment, "graph": graph,
-        "reasoning": reasoning, "models": models,
-        "mindmap": policy_mindmap(policy, reasoning, kb, sentiment, graph, models, modifiers),
-        "research": policy_research_note(policy, reasoning, kb, graph, sentiment, modifiers, models),
-    }
+    out = {"kb": kb, "modifiers": modifiers, "sentiment": sentiment, "graph": graph,
+           "reasoning": reasoning}
+    if include_models:
+        models_series = series or get_policy_series()
+        shock = _policy_shock_scalar(policy, modifiers)
+        events = [hit["date"] for hit in kb.get("hits", [])]
+        events.append(str((models_series or {}).get("event_date") or ""))
+        models = {
+            "series": {k: models_series.get(k) for k in ("name", "source", "note", "event_date")}
+            | {"points": len(models_series.get("closes") or [])},
+            "shock": shock,
+            "lstm": lstm_policy_forecast(models_series, shock=shock),
+            "prophet": prophet_policy_decompose(models_series, events=[e for e in events if e]),
+        }
+        out["models"] = models
+        out["mindmap"] = policy_mindmap(policy, reasoning, kb, sentiment, graph, models, modifiers)
+        out["research"] = policy_research_note(policy, reasoning, kb, graph, sentiment, modifiers, models)
+    return out
 
 
 # ---------------------------------------------------------------- 最新行情看盘引擎（A 股 / 港股 / 美股）
@@ -4713,7 +4713,7 @@ def collect_market_for_push() -> tuple[dict, dict]:
     """
     today = _ashare_today()
     klines = _fetch_ashare_klines()
-    # 日 K 同时缓存给「AI 政策研报」的 LSTM / Prophet 式模型，避免推送链路重复打行情接口。
+    # 日 K 同时缓存给政策时序模型（LSTM / Prophet 式分解，栏目已下线，离线分析仍可复用）。
     set_policy_klines(klines)
     market = _build_ashare_market(klines, today)
     freshness = check_market_freshness(market, klines=klines, today=today)
@@ -5212,7 +5212,6 @@ def build_html(
     us_review: dict | None = None,
     max_items_per_source: int | None = None,
     max_length: int | None = None,
-    series: dict | None = None,
     quant: dict | None = None,
     radar: dict | None = None,
 ) -> str:
@@ -5224,10 +5223,10 @@ def build_html(
     ``now`` 保留在接口中以兼容现有调用，但报告标题不展示推送时间。
     ``review`` 为 A 股看盘结果；缺省时自动调用 analyze_ashare()（实时采集 → 快照兜底）。
     ``hk_review`` / ``us_review`` 为港股、美股看盘结果；缺省时分别调用 analyze_hk() / analyze_us()。
-    ``series`` 为「AI 政策研报」板块时序模型（LSTM / Prophet 式分解）的输入序列：
-    缺省时用 :func:`get_policy_series`——推送路径缓存的真实日 K，否则明确标注的合成演示序列。
+    2026-10-28 起「AI 政策研报」整栏下线（思维导图 / LSTM × Prophet / 结构化研报），
+    推送不再组装这三块，也不再为它抓日 K。
     ``max_items_per_source`` / ``max_length`` 参数保留用于兼容既有调用与推送容量配置；
-    正文以分析栏目为主（AI 每日总结 → AI 看盘 → AI 情绪热力图 → AI 政策分析 → AI 政策深度 → AI 政策研报 → AI 板块机会 → 大 V 分析），
+    正文以分析栏目为主（AI 每日总结 → AI 看盘 → AI 情绪热力图 → AI 政策分析 → AI 政策深度 → AI 板块机会 → 大 V 分析），
     「AI 看盘」紧跟「AI 每日总结」之后，让最新的 A 股 / 港股 / 美股行情在开篇就能看到；
     不展示监测平台清单、时间核对或推送协议说明。
     **「AI 量化日报」卡片放正文最开头**（紧随刊头，其它栏目都在它之后；见 :func:`_quant_report`）：
@@ -5340,7 +5339,7 @@ META_TEXT_HIDDEN: list = []     # 本次推送删掉的片段（供自检与测�
 
     # ── 「AI 政策分析」卡片：政策维度热度 + 鹰鸽取向 + 支撑新闻（与其余板块共用同一批标题）──
     # 这里单独跑一次深度层（analyze_brief 默认不跑，避免 /api 与测试路径承担模型开销）。
-    policy = analyze_policy(brief, series=series, deep=True)
+    policy = analyze_policy(brief, deep=True)
 
     def _hl_policy(text: str) -> str:
         """政策维度标签在总结句里高亮：净空维度用下跌强调色，其余用荧光绿。
@@ -5574,18 +5573,12 @@ META_TEXT_HIDDEN: list = []     # 本次推送删掉的片段（供自检与测�
             f'<div class="ftr">每个格子=一个投资关键词并固定附两个港交所现有 ETF 及对应指数（多柜台产品同时标注 HKD / CNY / USD 柜台）；无纯主题产品时明确标注代理。热度深浅=关注度，颜色=情绪方向；线索列表不展示（完整数据在 /api/heatmap）；{"热度>75为沸腾需防拥挤，" if level>=1 else ""}仅统计信号，不作为投资依据。</div></div>'
         )
 
-    # ── 「AI 政策深度」/「AI 政策研报」两张卡片：政策法规知识库检索（RAG）+ 修饰词术语口径 +
+    # ── 「AI 政策深度」卡片：政策法规知识库检索（RAG）+ 修饰词术语口径 +
     kb = policy.get("kb") or {}
     modifiers = policy.get("modifiers") or {}
     sentiment = policy.get("sentiment") or {}
     graph = policy.get("graph") or {}
     reasoning = policy.get("reasoning") or {}
-    mindmap = policy.get("mindmap") or {}
-    models = policy.get("models") or {}
-    lstm = models.get("lstm") or {}
-    prophet = models.get("prophet") or {}
-    research = policy.get("research") or {}
-    series_meta = models.get("series") or {}
 
     def _deep_hdr(label: str, note: str) -> str:
         return (f'<tr><td colspan="2" class="td-hdr"><span class="tag">{_esc(label)}</span> '
@@ -5692,78 +5685,6 @@ META_TEXT_HIDDEN: list = []     # 本次推送删掉的片段（供自检与测�
             f'数据仅供参考，不作为投资依据。</div></div>'
         )
 
-
-    def _render_policy_research(level: int) -> str:
-        """「AI 政策研报」卡片：思维导图（全量档）+ LSTM / Prophet 式模型 + 结构化政策影响研报。"""
-        series_label = (f'样本：{_esc(series_meta.get("name") or "—")} · {series_meta.get("points", 0)} 根日 K · '
-                        f'{"合成演示序列（无实时行情）" if series_meta.get("source") == "synthetic" else _esc(series_meta.get("source") or "")}')
-        rows = []
-        if level > 1:
-            rows.append(_deep_hdr("政策影响思维导图", "结构化拆解：根节点 = 当日政策主线"))
-            rows.append(f'<tr><td class="td-n">▣</td><td class="td-t">'
-                        f'<div>{_esc(mindmap.get("root") or "—")}</div></td></tr>')
-            for branch in mindmap.get("branches") or []:
-                children = "".join(f'<div class="ev">├─ {_esc(child)}</div>'
-                                   for child in branch.get("children") or [])
-                rows.append(f'<tr><td class="td-n">·</td><td class="td-t">'
-                            f'<div><span class="tag-w">{_esc(branch["label"])}</span></div>{children}</td></tr>')
-
-        rows.append(_deep_hdr("LSTM · 中长期走势节奏", series_label))
-        rows.append(
-            f'<tr><td class="td-n">L</td><td class="td-t">'
-            f'<div>{_esc(lstm.get("summary") or "样本不足未外推")}</div>'
-            + (f'<div class="ev">口径：{_esc(lstm.get("model") or "LSTM")} · 隐藏单元 {lstm.get("hidden", "—")} · '
-               f'回看 {lstm.get("seq", "—")} 步 · 外推 {lstm.get("horizon", "—")} 日 · '
-               f'政策情景输入偏移 {models.get("shock", 0):+.2f}（鹰鸽取向 + 修饰词强度）</div>'
-               f'<div class="ev">{_esc(lstm.get("note") or "")}</div>' if level > 1 else "")
-            + '</td></tr>'
-        )
-        rows.append(_deep_hdr("Prophet 式分解 · 剥离季节看政策窗口", "趋势 + 季节性 + 政策突变"))
-        rows.append(
-            f'<tr><td class="td-n">P</td><td class="td-t">'
-            f'<div>{_esc(prophet.get("summary") or "样本不足未分解")}</div>'
-            + (f'<div class="ev">口径：{_esc(prophet.get("model") or "Prophet 式加性分解")}</div>'
-               f'<div class="ev">{_esc(prophet.get("note") or "")}</div>' if level > 1 else "")
-            + '</td></tr>'
-        )
-
-        rating = research.get("rating") or "—"
-        rating_cls = "tag-d" if "承压" in rating else ("tag" if "利好" in rating else "tag-w")
-        rows.append(_deep_hdr("政策影响研报（结构化结论）", research.get("horizon") or ""))
-        rows.append(
-            f'<tr><td class="td-n">R</td><td class="td-t">'
-            f'<div><span class="{rating_cls}">{_esc(rating)}</span> '
-            f'<span class="sub">{_esc(research.get("rating_note") or "")}</span></div>'
-            f'<div>{_esc(research.get("abstract") or "")}</div></td></tr>'
-        )
-        for rank, item in enumerate(research.get("long_term") or [], 1):
-            if level < 2 and rank > 2:
-                break
-            cls = "tag-d" if item["direction"] == "净空" else ("tag" if item["direction"] == "净多" else "tag-w")
-            rows.append(
-                f'<tr><td class="td-n">{rank:02d}</td><td class="td-t">'
-                f'<div><span class="tag">长远冲击</span> <span class="{cls}">{_esc(item["direction"])}</span> '
-                f'<span class="sub">{_esc(item["nature"])} · {_esc(item["horizon"])}</span></div>'
-                f'<div>{_esc(item["industry"])}</div>'
-                + (f'<div class="ev">{_esc(item["impact"])}（驱动：{_esc(item["driver"])}）</div>' if level > 1 else "")
-                + '</td></tr>'
-            )
-        risk_html = "".join(f'<div class="ev">· {_esc(risk)}</div>'
-                            for risk in (research.get("risks") or [])[:3 if level > 1 else 2])
-        rows.append(f'<tr><td class="td-n">!</td><td class="td-t">'
-                    f'<div><span class="tag-d">风险提示</span></div>{risk_html}</td></tr>')
-        rows.append(f'<tr><td class="td-n">⏱</td><td class="td-t">'
-                    f'<div><span class="tag">政策窗口期</span></div>'
-                    f'<div class="ev">{_esc(research.get("watch_window") or "—")}</div></td></tr>')
-
-        return (
-            f'<div class="card"><div class="hdr"><span class="tag">AI 政策研报</span>'
-            f'<span class="sub">{"思维导图 · " if level > 1 else ""}LSTM × Prophet 式分解 · 结构化研报</span></div>'
-            f'<table class="tbl-sub">{"".join(rows)}</table>'
-            f'<div class="ftr">推理链模拟高级分析师的分步拆解（宏观背景 → 行业限制 → 资金流向 → 受益板块），'
-            f'LSTM 捕捉时间序列的非线性与长期依赖、评估政策后的中长期节奏，Prophet 式加性分解剥离季节性后'
-            f'度量政策窗口期的中期波动。{_esc(research.get("disclaimer") or "")}</div></div>'
-        )
 
     if review is None:
         review = analyze_ashare()
@@ -6107,12 +6028,11 @@ META_TEXT_HIDDEN: list = []     # 本次推送删掉的片段（供自检与测�
         # 分析栏目 + 正文最后的「全网快讯」列表；监测平台清单与数量遥测不进入正文。
         # ``max_per_src`` 为本次容量口径允许的每源条数，快讯列表最多 3 条，
         # 容量不够时随收敛档位降到 2 / 1 条，为 0 时整段省略。
-        # ``deep_level``：2 = 政策深度层全量（含思维导图与背景知识长文），1 = 精简，0 = 整段省略。
+        # ``deep_level``：2 = 政策深度层全量（含舆情逐条、传导图谱全量、板块传导），1 = 精简，0 = 整段省略。
         per_source = 0 if not NEWS_CARD_ENABLED else (
             NEWS_ITEMS_PER_SOURCE if max_per_src is None
             else min(max_per_src, NEWS_ITEMS_PER_SOURCE))
-        policy_deep_cards = ((_render_policy_deep(deep_level) + _render_policy_research(deep_level))
-                             if deep_level > 0 else "")
+        policy_deep_cards = _render_policy_deep(deep_level) if deep_level > 0 else ""
         heatmap_card = _render_heatmap(deep_level)
         return (
             f'{css}<div class="bg">'
@@ -6138,7 +6058,7 @@ META_TEXT_HIDDEN: list = []     # 本次推送删掉的片段（供自检与测�
             + '</div>'
         )
 
-    # 容量收敛顺序：先降「政策深度 / 政策研报 / 大 V 分析」的派生内容，再逐级收敛快讯列表，
+    # 容量收敛顺序：先降「政策深度 / 大 V 分析」的派生内容，再逐级收敛快讯列表，
     # 最后才整段省略快讯——「AI 每日总结 / 看盘 / 政策分析 / 板块机会 / 大 V 分析」主卡片始终保留，
     # 保证任何账号口径（会员 10 万字 / 普通 2 万字）都能发得出去。
     # 快讯卡片隐藏时仍保留「一个收敛档位」，收敛顺序照旧是「先降政策深度层、最后才轮到快讯」；
