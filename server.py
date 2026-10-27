@@ -15,6 +15,11 @@ GET  /api/hallmark（或 /api/deai）两面体检报告 + 改写预览：推送 
       ?surface=push|page|all（默认 all）、?mode=polish|audit|off 可临时切换模式。
 DEAI_MODE / SKIP_DEAI_CHECK / DEAI_FORCE / DEAI_STRICT 环境变量见 hallmark_deai.py。
 
+文本内容层去 AI 味（规则取自 op7418/Humanizer-zh 等 MIT 项目）：
+GET  /api/humanizer（或 /api/text-deai）推送 HTML 与管理页的文本体检报告 + 清理预览。
+      ?surface=push|page|all、?mode=polish|audit|off 同上。
+HUMANIZER_MODE / SKIP_HUMANIZER_CHECK / HUMANIZER_FORCE / HUMANIZER_STRICT 见 humanizer_zh.py。
+
 DeepSeek Search & Fetch（2026-10-17 新 API，需 DEEPSEEK_API_KEY）：
 GET  /api/big-v（或 /api/bigv）「大 V 分析」结构化 AI 框架推演（政治 / 地缘 / 经济）
 GET  /api/deepseek/status 配置自检（不泄漏 Key）
@@ -35,6 +40,7 @@ from urllib.request import Request, urlopen
 
 import deepseek_search
 import hallmark_deai
+import humanizer_zh
 import sensitive
 import sources
 
@@ -56,9 +62,11 @@ _MARKET_TTL = 300
 # 同一查询 5 分钟内复用结果，避免页面刷新重复计费。
 _SEARCH_CACHE: dict = {}
 _SEARCH_TTL = 300
-# /api/hallmark 的体检报告缓存（推送 HTML 生成较重，30 秒内复用）。
+# /api/hallmark 与 /api/humanizer 的体检报告缓存（推送 HTML 生成较重，30 秒内复用）。
 _HALLMARK_CACHE: dict = {"at": 0.0, "payload": None}
 _HALLMARK_TTL = 30
+_HUMANIZER_CACHE: dict = {"at": 0.0, "payload": None}
+_HUMANIZER_TTL = 30
 
 
 def _read_surface(name: str) -> str:
@@ -100,6 +108,39 @@ def hallmark_report(surface: str = "all", mode: str | None = None) -> dict:
     if surface == "all" and mode is None:
         _HALLMARK_CACHE["at"] = now
         _HALLMARK_CACHE["payload"] = payload
+    return payload
+
+
+def humanizer_report(surface: str = "all", mode: str | None = None) -> dict:
+    """生成两面（推送 HTML / 管理页）的文本内容去 AI 味体检报告。
+
+    与 ``hallmark_report`` 共用同一份 ``get_brief()`` 缓存；``hallmark_deai`` 管视觉层，
+    ``humanizer_zh`` 管文字层，两者报告结构一致，便于前端并排展示。
+    """
+    now = time.time()
+    if (_HUMANIZER_CACHE["payload"] is not None and surface == "all"
+            and mode is None and now - _HUMANIZER_CACHE["at"] < _HUMANIZER_TTL):
+        return _HUMANIZER_CACHE["payload"]
+
+    push_html = page_html = ""
+    if surface in ("all", "push"):
+        try:
+            brief = get_brief()
+            push_html = sources.build_html(brief, review=sources.analyze_ashare(get_market()["market"]))
+        except Exception as error:
+            push_html = _read_surface("brief-output.html")
+            if not push_html:
+                push_html = f"<div>简报渲染失败：{error}</div>"
+    if surface in ("all", "page"):
+        page_html = _read_surface("index.html")
+
+    payload = humanizer_zh.reports(push_html, page_html)
+    payload["surface"] = surface
+    if mode is not None:
+        payload["config"] = dict(payload.get("config", {}), requested_mode=str(mode))
+    if surface == "all" and mode is None:
+        _HUMANIZER_CACHE["at"] = now
+        _HUMANIZER_CACHE["payload"] = payload
     return payload
 
 
@@ -263,6 +304,20 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(HTTPStatus.OK, hallmark_report(surface, mode))
             except Exception as error:
                 return self.send_json(HTTPStatus.OK, {"error": str(error), "status": "error"})
+        if path in ("/api/humanizer", "/api/text-deai"):
+            # 文本内容层去 AI 味体检：规则取自 op7418/Humanizer-zh 等 MIT 项目。
+            qs = parse_qs(query)
+            surface = (qs.get("surface") or ["all"])[0].strip().lower()
+            if surface not in ("push", "page", "all"):
+                return self.send_json(HTTPStatus.BAD_REQUEST, {
+                    "message": "surface 只能是 push / page / all",
+                    "surfaces": ["push", "page", "all"],
+                })
+            mode = (qs.get("mode") or [None])[0]
+            try:
+                return self.send_json(HTTPStatus.OK, humanizer_report(surface, mode))
+            except Exception as error:
+                return self.send_json(HTTPStatus.OK, {"error": str(error), "status": "error"})
         if path == "/api/deepseek/status":
             # DeepSeek Search & Fetch 配置自检（2026-10-17 新 API）：不泄漏 Key，
             # 附全部已接入搜索的数据源清单，供页面状态与排障。
@@ -402,16 +457,19 @@ class Handler(SimpleHTTPRequestHandler):
         content = sources.build_html(brief, review=sources.analyze_ashare(market_payload["market"]))
 
         # ── 推送前检查：去 AI 味（与 push_brief.py 同一套闸门，规则取自 Nutlope/hallmark）──
-        # 支持前端临时切换模式：POST body {"deai_mode": "polish"|"audit"|"off"}。
-        deai_mode = None
+        # 支持前端临时切换模式：POST body {"deai_mode": ..., "humanizer_mode": ...}。
+        deai_mode = humanizer_mode = None
         try:
             length = int(self.headers.get("Content-Length") or 0)
             if length > 0:
                 body = json.loads(self.rfile.read(length).decode("utf-8"))
-                if isinstance(body, dict) and body.get("deai_mode"):
-                    deai_mode = str(body["deai_mode"]).strip().lower()
+                if isinstance(body, dict):
+                    if body.get("deai_mode"):
+                        deai_mode = str(body["deai_mode"]).strip().lower()
+                    if body.get("humanizer_mode"):
+                        humanizer_mode = str(body["humanizer_mode"]).strip().lower()
         except (ValueError, UnicodeDecodeError, OSError):
-            deai_mode = None
+            deai_mode = humanizer_mode = None
         deai = hallmark_deai.check_push("", content, mode=deai_mode)
         print(f"去 AI 味：{deai['reason'] or deai['mode']}", flush=True)
         if not deai["ok"]:
@@ -420,6 +478,16 @@ class Handler(SimpleHTTPRequestHandler):
                 "hallmark": deai.get("report", {}).get("after", {}),
             })
         content = deai["content"]
+
+        # ── 文本内容层去 AI 味（Humanizer-zh 静态子集），与 push_brief.py 同一套闸门。
+        human = humanizer_zh.check_push("", content, mode=humanizer_mode)
+        print(f"文本去 AI 味：{human['reason'] or human['mode']}", flush=True)
+        if not human["ok"]:
+            return self.send_json(HTTPStatus.UNPROCESSABLE_ENTITY, {
+                "message": f"已取消推送：文本去 AI 味严格模式拦截——{human['reason']}",
+                "humanizer": human.get("report", {}).get("after", {}),
+            })
+        content = human["content"]
 
         payload = {
             "token": token,

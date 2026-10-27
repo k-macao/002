@@ -20,10 +20,18 @@
     SKIP_DEAI_CHECK=1        跳过去 AI 味闸门（测试/应急）
     DEAI_FORCE=pass|block    强制放行/拦截去 AI 味闸门（测试/应急）
     DEAI_STRICT=1            改写后仍有未修复的 Floor 命中就拦截推送（退出码 5）
+    HUMANIZER_MODE=polish|audit|off
+                             推送前「文本内容去 AI 味」闸门（``humanizer_zh.py``，规则取自
+                             GitHub 上的 op7418/Humanizer-zh 等 MIT 项目）。默认 polish：
+                             体检 + 删除零信息纯套话；audit 只体检；off 跳过。
+    SKIP_HUMANIZER_CHECK=1   跳过文本去 AI 味闸门（测试/应急）
+    HUMANIZER_FORCE=pass|block  强制放行/拦截（测试/应急）
+    HUMANIZER_STRICT=1       改写后仍有未修复的强信号命中就拦截推送（退出码 6）
 
 推送前闸门顺序（与 server.py ``POST /api/run`` 完全一致）：
-① 大盘数据新鲜度检查 → ② 敏感词快讯过滤 → ③ **去 AI 味体检 + 改写（本版本新增）**
-→ ④ 敏感词终检（在改写后的最终 HTML 上执行）→ ⑤ 推送。
+① 大盘数据新鲜度检查 → ② 敏感词快讯过滤 → ③ 去 AI 味·设计层（Hallmark）
+→ ④ **去 AI 味·文本内容层（Humanizer-zh）** → ⑤ 敏感词终检（在改写后的最终 HTML 上执行）
+→ ⑥ 推送。
 
 第 ① 步：简报里的 A 股复盘数据必须来自实时行情接口
 （东方财富主源，失联时自动切换腾讯证券备用源）、且复盘日等于最近一个可复盘交易日；
@@ -34,7 +42,8 @@
 再扫描标题 + HTML；残留命中则放弃本次推送，退出码 4。正常财经 / 地缘新闻（战争、制裁、Iran 等）不会误伤。
 
 退出码：0 成功，1 未配置 token，2 推送失败，3 大盘数据非最新（已跳过推送），
-4 内容未通过敏感词检测（已跳过推送），5 去 AI 味严格模式拦截（已跳过推送）。
+4 内容未通过敏感词检测（已跳过推送），5 设计层去 AI 味严格模式拦截（已跳过推送），
+6 文本层去 AI 味严格模式拦截（已跳过推送）。
 """
 import json
 import os
@@ -43,6 +52,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 import hallmark_deai
+import humanizer_zh
 import sensitive
 import sources
 
@@ -169,6 +179,18 @@ def main():
               flush=True)
         return 5
     content = deai["content"]
+
+    # ── 推送前闸门：文本内容层「去 AI 味」（规则取自 op7418/Humanizer-zh 等 MIT 项目）。
+    # 只删零信息纯套话（升华结尾 / 客服腔 / 假互动 / 讲义腔路标词）；
+    # 逐字新闻标题、证据行、数字、日期、引号原话与链接全部受保护，签名漂移整体回滚。
+    human = humanizer_zh.check_push("", content)
+    print(f"文本去 AI 味：{human['reason'] or human['mode']}", flush=True)
+    if not human["ok"]:
+        print("跳过推送：文本去 AI 味严格模式拦截，本次不推。", flush=True)
+        print(f"诊断：{json.dumps(human.get('report', {}).get('after', {}), ensure_ascii=False)[:800]}",
+              flush=True)
+        return 6
+    content = human["content"]
 
     payload = {
         "token": token,

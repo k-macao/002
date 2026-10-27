@@ -28,8 +28,9 @@ runBtn.onclick=async()=>{
   showToast('正在聚合内容并生成 AI 简报…');
   try{
     const deaiMode=typeof window.getDeaiMode==='function' ? window.getDeaiMode() : 'polish';
+    const humanizerMode=typeof window.getHumanizerMode==='function' ? window.getHumanizerMode() : 'polish';
     const res=await fetch('api/run',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({deai_mode:deaiMode})});
+      body:JSON.stringify({deai_mode:deaiMode, humanizer_mode:humanizerMode})});
     if(res.ok){
       const data=await res.json();
       showToast((data&&data.message)||'简报已生成，将推送至 PushPlus');
@@ -508,7 +509,7 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
   window._policyDeepReload=loadPolicyDeep;
 })();
 
-/* ---- 大 V 分析 · 江学勤「预测历史」框架启发的 AI 仿推演 ----
+/* ---- 大 V 分析 · 「预测历史」框架启发的 AI 仿推演 ----
    静态页保留 2026-10-26 快照；server.py 可用时用 /api/big-v 按当日快讯重算。
    所有动态内容都转义；不把外部新闻标题当作 HTML 插入。 */
 (function(){
@@ -766,6 +767,89 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
       const data=await res.json();
       if(data && data.surfaces) renderFindings(data);
     }catch(e){/* 后端未启动时保留静态快照 */}
+  }
+  load();
+})();
+
+/* ===================== 推送前 · 文本内容去 AI 味（Humanizer-zh 静态闸门） =====================
+   数据源：GET /api/humanizer（或 /api/text-deai）。与上面的设计层面板并列，
+   GitHub Pages 纯静态托管时保留 index.html 里的静态快照，不发送请求。 */
+(function(){
+  const section=document.getElementById('humanizerSection');
+  if(!section) return;
+  const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const $=id=>document.getElementById(id);
+  const modeSel=$('humanizerMode');
+
+  try{
+    const saved=localStorage.getItem('humanizer.mode');
+    if(saved && ['polish','audit','off'].includes(saved)) modeSel.value=saved;
+  }catch(e){}
+  modeSel.addEventListener('change',()=>{
+    try{ localStorage.setItem('humanizer.mode', modeSel.value); }catch(e){}
+  });
+  window.getHumanizerMode=()=>modeSel ? modeSel.value : 'polish';
+
+  function render(report){
+    const push=report.surfaces?.push||null, page=report.surfaces?.page||null;
+    $('hzScoreBefore').textContent=report.overall_score_before ?? '—';
+    $('hzScoreAfter').textContent=report.overall_score_after ?? '—';
+    const d=(report.overall_score_after??0)-(report.overall_score_before??0);
+    $('hzScoreDelta').textContent=(d>0?`+${d}`:String(d))+' 分 · 启发式体检分，非 AI 生成概率';
+
+    for(const [r,scoreEl,stateEl,label] of [
+      [push,'hzPushScore','hzPushState','推送 HTML'],
+      [page,'hzPageScore','hzPageState','管理页'],
+    ]){
+      if(!r) continue;
+      $(scoreEl).textContent=`${r.score_before} → ${r.score_after}`;
+      const a=r.after||{}, c=a.counts||{};
+      $(stateEl).textContent=`${label}：${a.findings?.length||0} 类模式命中（可清理 ${c.auto_fixable||0} / 需语义判断 ${c.manual||0}）；`+
+        `本次清理 ${r.fixes?.filter(f=>f.gate!=='fact-lock').length||0} 类零信息套话。`;
+    }
+
+    const merged=[];
+    for(const s of [push,page]){
+      const tag=s===push?'推送':'页面';
+      for(const f of (s?.before?.findings||[])) merged.push({...f, surface:tag});
+    }
+    const rank={strong:0,medium:1,weak:2};
+    merged.sort((a,b)=>(rank[a.tier]??3)-(rank[b.tier]??3) || b.count-a.count);
+    const list=$('hzFindings');
+    if(!merged.length){
+      list.innerHTML='<li><span class="deai-finding-tier">clean</span>两个面均未命中文本 AI 味模式。</li>';
+    }else{
+      list.innerHTML=merged.slice(0,14).map(f=>
+        `<li><span class="deai-finding-tier ${esc(f.tier.toLowerCase())}">${esc(f.tier)}</span>`+
+        `<span class="deai-finding-gate">${esc(f.gate)} · ${esc(f.surface)}</span>`+
+        `<b>${esc(f.name)} ×${Number(f.count)||0}</b>`+
+        `<span class="deai-finding-auto">${f.auto?'可清理':'需语义判断'} · ${esc((f.fix||'').slice(0,50))}</span></li>`
+      ).join('');
+    }
+
+    const waivers=report.waivers||[];
+    if(waivers.length){
+      $('hzWaivers').innerHTML=waivers.map(w=>
+        `<li><b>${esc(w.item)}</b>（${esc(w.gate)}）：${esc(w.reason)}</li>`).join('');
+    }
+    let boundary=report.boundary||'';
+    if(report.limits) boundary+=' '+report.limits;
+    if(boundary) $('hzBoundary').textContent=boundary;
+    const cfg=report.config||{};
+    if(cfg.mode) $('humanizerPill').textContent=`Humanizer-zh · ${cfg.mode}`;
+    $('hzFoot').innerHTML=`<span>引擎 ${esc(report.engine||'')} v${esc(report.version||'')} · `+
+      `检查 ${esc(String(report.patterns?.length||0))} 类模式 · `+
+      `检查时间 ${esc(report.checked_at||'')} · 实时报告见 <code>/api/humanizer</code>。</span>`;
+  }
+
+  async function load(){
+    if(isGithubPages) return;
+    try{
+      const res=await fetch('api/humanizer');
+      if(!res.ok) return;
+      const data=await res.json();
+      if(data && data.surfaces) render(data);
+    }catch(e){}
   }
   load();
 })();
