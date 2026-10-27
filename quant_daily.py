@@ -269,8 +269,10 @@ SCORING = {
     "risk_parity_weight_cap": 40.0,  # 单资产权重上限（%），避免低波动资产吃掉全部权重
     "basis_low": 3.0,            # 年化贴水 < 3% → 对冲成本偏低
     "basis_high": 8.0,           # > 8% → 偏高
-    "theme_strong": 60.0,        # 主题强度分 ≥ 60 → 强
+    "theme_strong": 60.0,        # 主题强度分 ≥ 60 → 强（完整口径：成交额占比 + 涨停 + 连板）
     "theme_mid": 35.0,           # ≥ 35 → 中
+    "theme_proxy_strong": 5.0,   # 仅成交额占比时：≥ 5% → 强（代理口径）
+    "theme_proxy_mid": 3.0,      # ≥ 3% → 中
     "outflow_alert": -50.0,      # 北向单日净流出告警（亿）
     "margin_drop_pct": -1.0,     # 两融余额环比降幅告警（%）
     "turnover_shock": 0.30,      # 成交额环比变动 30% 视为异常
@@ -334,6 +336,8 @@ def _pct(value, digits: int = 2, signed: bool = True) -> str:
     number = _num(value)
     if number is None:
         return "数据暂缺"
+    if round(number, digits) == 0:      # 免得出「-0.00%」这种看着像 bug 的写法
+        number = 0.0
     return f"{number:+.{digits}f}%" if signed else f"{number:.{digits}f}%"
 
 
@@ -403,6 +407,11 @@ def _metric(label: str, value, delta=None, status: str = "ok", note: str = "") -
 
 def _status_mark(status: str) -> str:
     return {"missing": "⚠️", "anomaly": "⚠️", "proxy": "（代理）"}.get(status, "")
+
+
+def _metric_na(label: str, note: str) -> dict:
+    """不适用项（如北向资金已停止披露）：照实说明，不用 ⚠️ 冒充「今天缺数据」。"""
+    return {"label": label, "value": "不适用", "delta": None, "status": "na", "note": note}
 
 
 def _esc(text) -> str:
@@ -617,74 +626,450 @@ def _sentiment_from_brief(brief: dict) -> list:
     return rows
 
 
-def live_bundle(as_of=None, market=None, brief=None) -> dict:
-    """采集当日可自动获取的部分；拿不到的数据类留空，由分析层标「数据暂缺」。
+def _series_pct(candles: dict, as_of: str, n: int) -> list:
+    """取截至 as_of 的最近 n 个交易日涨跌幅（%）。序列不足返回空列表。"""
+    dates = [d for d in sorted(candles or {}) if not as_of or d <= as_of]
+    pcts = [candles[d].get("pct") for d in dates[-n:]]
+    if len(pcts) < n or any(_num(p) is None for p in pcts):
+        return []
+    return [round(float(p), 3) for p in pcts]
 
-    自动覆盖：行情（指数 / 5 日 / 成交额）、风格剪刀差、PE / PB 快照、
-    市场宽度与成交额（复用 sources 主备切换）、舆情热度与政策事件（复用仓库 69 源快讯）。
-    不覆盖：财报明细、一致预期、两融与龙虎榜、大类资产、因子收益、基差、指增超额——
-    这些需要 Agent 侧工具，通过 ``--input`` 传入（schema 见模块文档与 docs/quant_daily.md）。
+
+def _price_percentile(candles: dict, as_of: str) -> float | None:
+    """收盘价在已取窗口内的分位（0~100）。这是**价格分位**，不是估值分位，报告里会标注代理。"""
+    dates = [d for d in sorted(candles or {}) if not as_of or d <= as_of]
+    closes = [_num(candles[d].get("close")) for d in dates]
+    closes = [c for c in closes if c]
+    if len(closes) < 120:      # 不足半年不判分位，避免拿几十根 K 线算「十年分位」
+        return None
+    latest = closes[-1]
+    return round(sum(1 for c in closes if c <= latest) / len(closes) * 100, 1)
+
+
+def _bond_series(yield_candles: dict, as_of: str, n: int, duration: float) -> list:
+    """债券日收益的久期代理：收益率上行 1bp，组合约亏 duration×0.01%。
+
+    护栏：如果「收益率」序列的日均变动超过 0.3 个百分点，说明拿到的不是收益率曲线
+    （可能是价格指数或行情点位），这时**宁可不给债券序列**，也不用它算风险平价——
+    否则久期一乘就会出现 -200% 这种明显不成立的日收益。
+    """
+    dates = [d for d in sorted(yield_candles or {}) if not as_of or d <= as_of]
+    yields = [_num(yield_candles[d].get("close")) for d in dates]
+    pairs = [(dates[i], yields[i], yields[i - 1]) for i in range(1, len(yields))
+             if yields[i] is not None and yields[i - 1] is not None]
+    if len(pairs) < 20:
+        return []
+    changes = [abs(value - prev) for _day, value, prev in pairs]
+    median_change = sorted(changes)[len(changes) // 2]
+    if median_change > 0.3:
+        return []
+    out = [round(-duration * (value - prev), 4) for _day, value, prev in pairs]
+    return out[-n:]
+
+
+def _asset_history(klines: dict, as_of: str, codes: dict) -> dict:
+    """四类资产近 60 个交易日的日收益序列，供近 1 周 / 近 1 月累计与风险平价使用。"""
+    history = {}
+    stock = _series_pct(klines.get("沪深300") or {}, as_of, 60)
+    if stock:
+        history["股票"] = stock
+    for label, key in (("商品", "commodity"), ("黄金", "gold")):
+        candles = klines.get(codes.get(key) or "") or {}
+        series = _series_pct(candles, as_of, 60)
+        if series:
+            history[label] = series
+    bond = _bond_series(klines.get(codes.get("cgb10y") or "") or {}, as_of, 60,
+                        SCORING["bond_duration"])
+    if bond:
+        history["债券"] = bond
+    return history
+
+
+def _factor_proxies(klines: dict, quotes: dict, as_of: str) -> list:
+    """用指数收益差构造可复算的因子代理：规模 / 价值 / 成长 / 动量。
+
+    质量、换手率、波动率需要个股截面因子库，这里**不造**，留给 Agent 工具输入。
+    """
+    def _pct_of(name):
+        quote = (quotes or {}).get(name) or {}
+        value = _num(quote.get("pct"))
+        if value is not None:
+            return value
+        candles = klines.get(name) or {}
+        row = _index_row(name, candles, as_of)
+        return _num(row.get("pct")) if row else None
+
+    base = _pct_of("沪深300")
+    small = _pct_of("中证1000")
+    value = _pct_of("国证价值")
+    growth = _pct_of("国证成长")
+    momentum = _cum_return(_series_pct(klines.get("中证1000") or {}, as_of, 5), 5)
+    out = []
+    if small is not None and base is not None:
+        out.append({"key": "size", "label": "规模（中证1000−沪深300）", "ret": round(small - base, 2),
+                    "proxy": True})
+    if value is not None and base is not None:
+        out.append({"key": "value", "label": "价值（国证价值−沪深300）", "ret": round(value - base, 2),
+                    "proxy": True})
+    if growth is not None and base is not None:
+        out.append({"key": "growth", "label": "成长（国证成长−沪深300）", "ret": round(growth - base, 2),
+                    "proxy": True})
+    if momentum is not None:
+        out.append({"key": "momentum", "label": "动量（中证1000 近 5 日）", "ret": momentum,
+                    "proxy": True})
+    return out
+
+
+def _turnover_from_klines(klines: dict, as_of: str) -> dict | None:
+    """两市成交额（日 K 口径）：上证 + 深证当日成交额，前值取上一交易日的日 K。"""
+    sums: list = []
+    for name in ("上证指数", "深证成指"):
+        candles = klines.get(name) or {}
+        dates = [d for d in sorted(candles) if not as_of or d <= as_of]
+        if len(dates) < 2:
+            return None
+        latest, prev = candles[dates[-1]], candles[dates[-2]]
+        if latest.get("amount") is None or prev.get("amount") is None:
+            return None
+        if as_of and dates[-1] != as_of:
+            return None      # 日 K 还没到目标交易日，不能用旧数据当当日
+        sums.append((latest["amount"] / 1e8, prev["amount"] / 1e8))
+    amount = round(sum(row[0] for row in sums), 0)
+    prev = round(sum(row[1] for row in sums), 0)
+    return {"amount": amount, "prev": prev, "delta": round(amount - prev, 0), "unit": "亿"}
+
+
+def _turnover_from_quotes(quotes: dict) -> dict | None:
+    """两市成交额（实时行情口径）：只有当日值，**不给环比**。
+
+    行情接口的成交额与日 K 成交额口径不同（一个含盘后/大宗口径差异，一个是逐日汇总），
+    混着算环比会凭空造出「放量 113%」这种假异常，所以两端口径不混用。
+    """
+    sh = (quotes or {}).get("上证指数") or {}
+    sz = (quotes or {}).get("深证成指") or {}
+    if sh.get("amount") is None or sz.get("amount") is None:
+        return None
+    return {"amount": round(sh["amount"] + sz["amount"], 0), "prev": None,
+            "delta": None, "unit": "亿"}
+
+
+def _breadth_from_feed(feed: dict, pools: dict, market: dict | None) -> dict:
+    """市场宽度：涨跌家数取行情接口，涨跌停家数与连板取涨跌停池。"""
+    breadth: dict = {}
+    counts = (feed or {}).get("breadth") or {}
+    if counts.get("up") or counts.get("down"):
+        breadth.update({"up_count": counts.get("up"), "down_count": counts.get("down"),
+                        "flat_count": counts.get("flat")})
+    if (pools or {}).get("ok"):
+        for key in ("limit_up", "limit_down", "ladder"):
+            if pools.get(key) is not None:
+                breadth[key] = pools[key]
+    source_breadth = (market or {}).get("breadth") or {}
+    for key in ("limit_up", "limit_down", "broken", "seal_rate", "ladder", "up_text", "down_text"):
+        if source_breadth.get(key) is not None and key not in breadth:
+            breadth[key] = source_breadth[key]
+    return breadth
+
+
+def live_bundle(as_of=None, market=None, brief=None, feeds: dict | None = None) -> dict:
+    """采集当日数据：行情 / 行业 / 两融 / 龙虎榜 / 大类资产 / 舆情事件，逐项标注来源。
+
+    采集实现在 :mod:`quant_feeds`（多源 + 备用源 + 失败返回错误）。这里只做「拼装」：
+    把各数据源的结果映射成分析层用的字段，并把每项的状态写进 ``bundle['provenance']``，
+    报告据此说明「哪些字段是实测、哪些是代理、哪些需要 Agent 工具补」。
+    拿不到就留空，由分析层标「数据暂缺」，绝不用前值或同类资产顶替。
     """
     import sources
 
     as_of = _as_of(as_of)
     bundle: dict = {"as_of": as_of, "source": "live", "notes": []}
+    provenance: list = []
 
-    klines = _fetch_klines(_CSI_SECIDS + _STYLE_SECIDS)
-    indices = [row for row in (_index_row(name, klines.get(name), as_of)
-                               for name, _ in _CSI_SECIDS) if row]
+    def note(field, status, source, detail=""):
+        provenance.append({"field": field, "status": status, "source": source, "detail": detail})
+
+    if feeds is None:
+        try:
+            import quant_feeds
+            feeds = quant_feeds.collect(as_of)
+        except Exception as error:
+            feeds = {}
+            bundle["notes"].append(f"采集层异常：{error}")
+    quote_feed = (feeds or {}).get("quotes") or {}
+    quotes = quote_feed.get("quotes") or {}
+    quote_source = ("东方财富 push2 行情" if quote_feed.get("source") == "eastmoney"
+                    else "腾讯证券备用行情")
+
+    # ── 日 K：指数（长窗口算价格分位）+ 风格 + 大类资产序列 ──
+    index_codes = [("沪深300", "1.000300"), ("中证500", "1.000905"), ("中证1000", "1.000852"),
+                   ("上证指数", "1.000001"), ("深证成指", "0.399001")]
+    style_codes = [("国证价值", "0.399371"), ("国证成长", "0.399370")]
+    klines = _fetch_klines(index_codes, lmt=2500) or {}
+    klines.update(_fetch_klines(style_codes, lmt=70) or {})
+
+    # ── 指数行情 ──
+    indices = []
+    for name in INDEX_NAMES:
+        quote = quotes.get(name) or {}
+        candle_row = _index_row(name, klines.get(name), as_of)
+        pct = _num(quote.get("pct"))
+        if pct is None and candle_row:
+            pct = _num(candle_row.get("pct"))
+        if pct is None:
+            continue
+        row = {
+            "name": name,
+            "pct": pct,
+            "pct_5d": _cum_return(_series_pct(klines.get(name) or {}, as_of, 5), 5),
+            "amount": _num(quote.get("amount")) if quote.get("amount") is not None
+                      else (_num(candle_row.get("amount")) if candle_row else None),
+            "close": _num(quote.get("close")) or (_num(candle_row.get("close")) if candle_row else None),
+            "stale": bool(candle_row and candle_row.get("stale")),
+        }
+        if not row["stale"]:
+            indices.append(row)
     if indices:
         bundle["indices"] = indices
+        note("指数行情", "live" if quotes else "proxy",
+             quote_source if quotes else "东方财富日 K", "沪深300 / 中证500 / 中证1000")
     else:
-        bundle["notes"].append("指数日 K 主源与备用源均未返回，指数行情标「数据暂缺」")
+        note("指数行情", "missing", "东方财富 / 腾讯证券", "主备行情接口均未返回")
 
-    styles = {}
-    for name, _ in _STYLE_SECIDS:
-        row = _index_row(name, klines.get(name), as_of)
-        if row and _num(row.get("pct")) is not None:
-            styles[name] = row["pct"]
-    if len(styles) == len(STYLE_NAMES):
-        bundle["styles"] = styles
-        bundle["style_history"] = {
-            name: [klines[name][d]["pct"] for d in sorted(klines[name])[-5:]]
-            for name, _ in _STYLE_SECIDS if klines.get(name)
-        }
-
-    valuation = _fetch_valuation()
-    if valuation:
-        bundle["valuation"] = valuation
-
+    # ── 成交额与市场宽度 ──
+    turnover = None
     try:
         market = market if market is not None else sources.get_ashare_market()
     except Exception:
         market = None
-    if market:
-        # 只认实时接口 + 日期对得上的数据。内置快照（source=snapshot）或日期不一致时，
-        # 宽度与成交额一律不进当日日报——拿旧数据冒充当日等于编数据。
-        source = market.get("source")
-        market_date = market.get("date")
-        if source in ("eastmoney", "tencent") and market_date == as_of:
-            bundle["breadth"] = market.get("breadth") or {}
-            bundle["turnover"] = market.get("turnover")
-            bundle["market_snapshot_date"] = market_date
-            bundle["market_source"] = source
-            leaders = market.get("leaders") or []
-            laggards = market.get("laggards") or []
-            if leaders or laggards:
-                bundle["board_movers"] = {"strong": leaders[:5], "weak": laggards[:5]}
-        else:
-            bundle["notes"].append(
-                f"行情接口返回日期 {market_date or '未知'}（来源 {source or '未知'}），"
-                f"与目标交易日 {as_of} 不一致，市场宽度与成交额未采用")
+    market_ok = bool(market and market.get("source") in ("eastmoney", "tencent")
+                     and market.get("date") == as_of)
+    if market_ok and market.get("turnover"):
+        turnover = market.get("turnover")
+        turnover_source = "东方财富 / 腾讯日 K（含环比）"
+    else:
+        turnover = _turnover_from_klines(klines, as_of)
+        turnover_source = "东方财富日 K（含环比）"
+        if not turnover:
+            turnover = _turnover_from_quotes(quotes)
+            turnover_source = "行情接口成交额合计（不含环比，口径与日 K 不同不混算）"
+    if turnover:
+        bundle["turnover"] = turnover
+        note("两市成交额", "live", turnover_source)
+    else:
+        note("两市成交额", "missing", "东方财富 / 腾讯证券", "成交额字段未取到")
 
+    pools = (feeds or {}).get("limit_pools") or {}
+    # 快照兜底只在「日期就是目标交易日」时才用：昨天的涨停家数不能填进今天的日报。
+    breadth = _breadth_from_feed(quote_feed, pools, market if market_ok else None)
+    if market and not market_ok and (market.get("breadth") or market.get("turnover")):
+        # 内置快照的 date 会被改写成「今天」，光比日期拦不住；只认当日实测接口
+        # （source 为 eastmoney / tencent）才允许把家数、涨跌停、成交额写进日报。
+        bundle["notes"].append(
+            f"行情兜底快照（source={market.get('source') or '未知'}，"
+            f"date={market.get('date') or '未知'}）不是当日实测接口数据，"
+            "已丢弃其涨跌停、家数与成交额，不用它顶替当日值")
+    if breadth:
+        bundle["breadth"] = breadth
+        note("市场宽度", "live" if breadth.get("up_count") else "proxy",
+             "行情接口涨跌家数 + 涨跌停池",
+             f"上涨 {breadth.get('up_count') or '—'} / 下跌 {breadth.get('down_count') or '—'}"
+             f" / 涨停 {breadth.get('limit_up') if breadth.get('limit_up') is not None else '—'}"
+             f" / 跌停 {breadth.get('limit_down') if breadth.get('limit_down') is not None else '—'}"
+             + (f" / {breadth['ladder']}" if breadth.get("ladder") else ""))
+    else:
+        note("市场宽度", "missing", "东方财富 / 涨停池", "涨跌家数与涨跌停均未取到")
+    if (pools or {}).get("ok"):
+        note("涨跌停池", "live", "东方财富 push2ex",
+             f"涨停 {pools.get('limit_up') if pools.get('limit_up') is not None else '—'} 家 / "
+             f"跌停 {pools.get('limit_down') if pools.get('limit_down') is not None else '—'} 家")
+    else:
+        note("涨跌停池", "missing", "东方财富 push2ex", (pools or {}).get("error") or "未返回")
+
+    # ── 估值：PE / PB 实测 + 价格分位（代理，不是估值分位） ──
+    valuation = {}
+    for name in INDEX_NAMES:
+        quote = quotes.get(name) or {}
+        pe, pb = _num(quote.get("pe")), _num(quote.get("pb"))
+        price_pct = _price_percentile(klines.get(name) or {}, as_of)
+        if pe is None and pb is None and price_pct is None:
+            continue
+        valuation[name] = {"pe": pe, "pb": pb, "price_pct": price_pct}
+    if valuation:
+        bundle["valuation"] = valuation
+        has_pct = any(v.get("price_pct") is not None for v in valuation.values())
+        note("指数 PE / PB", "live" if any(v.get("pe") for v in valuation.values()) else "missing",
+             quote_source, "估值分位需 10 年估值序列")
+        note("价格分位（估值分位代理）", "proxy" if has_pct else "missing",
+             "东方财富日 K 收盘价序列",
+             "估值分位（PE/PB）未取得时以价格分位替代，报告里标「价格代理」")
+
+    # ── 风格 ──
+    styles, style_history = {}, {}
+    for label, name in (("大盘", "沪深300"), ("小盘", "中证1000"),
+                        ("价值", "国证价值"), ("成长", "国证成长")):
+        pct = _num((quotes.get(name) or {}).get("pct"))
+        if pct is None:
+            row = _index_row(name, klines.get(name), as_of)
+            pct = _num(row.get("pct")) if row else None
+        if pct is not None:
+            styles[label] = pct
+            series = _series_pct(klines.get(name) or {}, as_of, 5)
+            if series:
+                style_history[label] = series
+    if styles:
+        bundle["styles"] = styles
+        if len(style_history) == len(styles):
+            bundle["style_history"] = style_history
+        note("风格剪刀差", "live" if "国证价值" in quotes else "proxy",
+             quote_source + "（大盘=沪深300，小盘=中证1000，价值/成长=国证价值/成长）")
+    else:
+        note("风格剪刀差", "missing", "东方财富", "风格指数未取到")
+
+    # ── 行业板块（申万一级代理） ──
+    industry_feed = (feeds or {}).get("industry") or {}
+    boards = industry_feed.get("boards") or []
+    sectors_up = (pools or {}).get("sectors_up") or {}
+    matched_limits = 0
+    if boards:
+        rows = []
+        for board in boards[:40]:
+            limit_hit = sectors_up.get(board["name"]) or {}
+            if limit_hit:
+                matched_limits += 1
+            rows.append({
+                "name": board["name"], "pct": board["pct"],
+                "turnover": board.get("amount"), "turnover_prev": None,
+                "main_net": board.get("main_net"),
+                "limit_up": limit_hit.get("count"),
+                "max_board": limit_hit.get("max_board"),
+            })
+        bundle["industry"] = rows
+        note("行业板块", "proxy", industry_feed.get("proxy") or "东方财富行业板块",
+             "东财行业分类比申万一级更细，报告按代理口径标注；成交额环比需历史数据")
+        themes = []
+        for board in boards[:4]:
+            if not board.get("turnover_share"):
+                continue
+            limit_hit = sectors_up.get(board["name"]) or {}
+            themes.append({"name": board["name"], "turnover_share": board["turnover_share"],
+                           "limit_up": limit_hit.get("count"),
+                           "days": limit_hit.get("max_board"), "pct": board.get("pct")})
+        if themes:
+            bundle["themes"] = themes
+            if matched_limits:
+                note("主题强度", "live", "行业板块成交额占比 + 涨停池连板",
+                     f"{matched_limits} 个板块匹配到涨停分布，按完整口径（占比 + 涨停 + 连板）判强弱")
+            else:
+                note("主题强度", "proxy", "行业板块成交额占比",
+                     "涨跌停池板块名与行业板块未匹配，只按成交额占比判强弱（代理口径）")
+        main_net = [b.get("main_net") for b in boards if b.get("main_net") is not None]
+        if main_net:
+            bundle.setdefault("funds", {})["main_net"] = round(sum(main_net), 2)
+            note("主力资金", "proxy", "行业板块主力净流入合计", "全市场主力净额需个股资金流接口")
+    else:
+        note("行业板块", "missing", "东方财富行业板块", "板块接口未返回数据")
+
+    # ── 资金：两融 + 龙虎榜 ──
+    funds = bundle.setdefault("funds", {})
+    funds.setdefault("north", None)
+    funds.setdefault("north_note", "北向资金实时数据自 2024-08 起停止披露，"
+                                   "改用主力资金与两融观察")
+    margin = (feeds or {}).get("margin") or {}
+    if margin.get("ok") and margin.get("current") is not None:
+        funds["margin"] = margin["current"]
+        funds["margin_prev"] = margin.get("prev")
+        note("两融余额", "live", "东方财富数据中心",
+             f"{margin.get('date') or ''} 两融 {margin['current']:,.0f} 亿"
+             + (f"，上一交易日 {margin['prev']:,.0f} 亿" if margin.get("prev") else ""))
+    else:
+        note("两融余额", "missing", "东方财富数据中心", margin.get("error") or "未返回")
+    billboard = (feeds or {}).get("billboard") or {}
+    if billboard.get("ok") and (billboard.get("inst") or billboard.get("hot")):
+        funds["lhb_inst"] = [{"name": i["name"], "net": i["net"], "streak": i.get("streak")}
+                             for i in (billboard.get("inst") or [])[:5]]
+        funds["lhb_hot"] = [{"name": i["name"], "net": i["net"], "streak": i.get("streak"),
+                             "seat": i.get("seat")} for i in (billboard.get("hot") or [])[:5]]
+        if funds.get("lhb_inst") or funds.get("lhb_hot"):
+            note("龙虎榜", "live", "东方财富数据中心",
+                 (billboard.get("note") or "") + f"（{billboard.get('date') or ''}）")
+    else:
+        note("龙虎榜", "missing", "东方财富数据中心", billboard.get("error") or "未返回")
+    if not any(funds.get(key) for key in ("margin", "main_net", "lhb_inst", "lhb_hot")):
+        bundle.pop("funds", None)   # 只剩「北向不披露」的说明，不算资金类已取得
+
+    # ── 大类资产 ──
+    cross = (feeds or {}).get("cross_asset") or {}
+    items = cross.get("items") or {}
+    macro: dict = {"cash": 0.01}
+    codes_for_history = {}
+    if items.get("cgb10y"):
+        macro["cgb10y"] = items["cgb10y"].get("value")
+        macro["cgb10y_prev"] = items["cgb10y"].get("prev")
+        codes_for_history["cgb10y"] = items["cgb10y"].get("code")
+        note("10Y 国债收益率", "live", items["cgb10y"].get("name") or "东方财富")
+    else:
+        note("10Y 国债收益率", "missing", "东方财富", cross.get("error") or "未返回")
+    for key, label in (("commodity", "商品"), ("gold", "黄金")):
+        item = items.get(key)
+        if item and item.get("pct") is not None:
+            macro[key] = {"name": item.get("name") or label, "pct": item["pct"]}
+            codes_for_history[key] = item.get("code")
+            note(f"{label}（{macro[key]['name']}）", "live", "东方财富")
+        else:
+            note(f"{label}", "missing", "东方财富", "候选代码均未返回")
+    if items.get("fx"):
+        fx = items["fx"]
+        macro["fx"] = {"name": fx.get("name") or "美元兑人民币", "value": fx.get("value"),
+                       "pct": fx.get("pct")}
+        note("汇率", "live", fx.get("name") or "东方财富")
+    else:
+        note("汇率", "missing", "东方财富", "候选代码均未返回")
+    if len(macro) > 1:
+        bundle["macro"] = macro
+
+    # ── 资产收益序列（近 1 周 / 近 1 月 + 风险平价） ──
+    asset_codes = {k: v for k, v in codes_for_history.items() if v}
+    if asset_codes:
+        asset_klines = _fetch_klines([(code, code) for code in asset_codes.values()], lmt=70) or {}
+        klines.update(asset_klines)
+    history = _asset_history(klines, as_of, codes_for_history)
+    if len(history) >= 3:
+        bundle["asset_history"] = history
+        note("资产收益序列", "proxy", "日 K 推导",
+             f"股票=沪深300，债券=久期 {SCORING['bond_duration']} 年×收益率变动，"
+             f"商品/黄金=对应品种日 K；{len(history)} 类资产可用")
+    else:
+        note("资产收益序列", "missing", "日 K", "可用序列不足 3 类，风险平价与近 1 周 / 1 月暂缺")
+
+    # ── 因子代理 ──
+    factors = _factor_proxies(klines, quotes, as_of)
+    if factors:
+        bundle["factors"] = factors
+        note("因子收益", "proxy", "指数收益差代理",
+             "质量 / 换手率 / 波动率需个股截面因子库，留待 Agent 工具输入")
+
+    # ── 需 Agent 工具、公开接口拿不到的部分 ──
+    for field, why in (("财报 / 业绩预告", "需交易所披露接口或 Agent 工具"),
+                       ("一致预期增速", "需卖方一致预期数据（付费源）"),
+                       ("指增超额", "需指增产品净值或持仓明细"),
+                       ("IF / IC / IM 基差", "需中金所合约行情与到期日"),
+                       ("质量 / 换手率 / 波动率因子", "需个股截面因子库")):
+        note(field, "missing", "Agent 工具（--input）", why)
+
+    # ── 舆情与事件（复用仓库 69 源快讯） ──
     if brief:
         sentiment = _sentiment_from_brief(brief)
         if sentiment:
             bundle["sentiment"] = sentiment
+            note("舆情热度", "live", "仓库 69 个数据源快讯热力图")
         events = _events_from_brief(brief)
         if events:
             bundle["events"] = events
+            note("政策事件", "live", "政策发布板块维度统计")
+    if not bundle.get("sentiment"):
+        note("舆情热度", "missing", "仓库 69 个数据源快讯", "本次未传入当日快讯")
 
+    bundle["provenance"] = provenance
     return bundle
 
 
@@ -713,9 +1098,44 @@ def demo_bundle(as_of=DEMO_AS_OF) -> dict:
     便于对照真实数据包检查「哪一列该有数、哪一列该标暂缺」。
     """
     as_of = _as_of(as_of)
+    demo_provenance = [
+        {"field": "指数行情", "status": "live", "source": "示例数据包（离线构造）",
+         "detail": "沪深300 / 中证500 / 中证1000"},
+        {"field": "两市成交额", "status": "live", "source": "示例数据包（离线构造）", "detail": "含环比"},
+        {"field": "市场宽度", "status": "live", "source": "示例数据包（离线构造）",
+         "detail": "涨跌家数 + 涨停 / 跌停"},
+        {"field": "指数 PE / PB", "status": "live", "source": "示例数据包（离线构造）",
+         "detail": "含近 10 年分位（示例值）"},
+        {"field": "风格剪刀差", "status": "live", "source": "示例数据包（离线构造）", "detail": ""},
+        {"field": "行业板块", "status": "live", "source": "示例数据包（离线构造）",
+         "detail": "申万一级（示例值）"},
+        {"field": "主题强度", "status": "live", "source": "示例数据包（离线构造）",
+         "detail": "成交额占比 + 涨停家数 + 连板天数"},
+        {"field": "主力资金", "status": "live", "source": "示例数据包（离线构造）",
+         "detail": "全市场主力净额"},
+        {"field": "两融余额", "status": "live", "source": "示例数据包（离线构造）",
+         "detail": "含上一交易日"},
+        {"field": "龙虎榜", "status": "live", "source": "示例数据包（离线构造）",
+         "detail": "机构 / 营业部席位"},
+        {"field": "大类资产", "status": "live", "source": "示例数据包（离线构造）",
+         "detail": "10Y 国债 / 商品 / 黄金 / 汇率"},
+        {"field": "资产收益序列", "status": "live", "source": "示例数据包（离线构造）",
+         "detail": "喂风险平价"},
+        {"field": "因子收益", "status": "live", "source": "示例数据包（离线构造）",
+         "detail": "六因子（示例值）"},
+        {"field": "财报 / 业绩预告", "status": "live", "source": "示例数据包（离线构造）",
+         "detail": "10 家（示例值）"},
+        {"field": "一致预期增速", "status": "live", "source": "示例数据包（离线构造）",
+         "detail": "行业景气度环比（示例值）"},
+        {"field": "指增超额", "status": "live", "source": "示例数据包（离线构造）", "detail": ""},
+        {"field": "IF / IC / IM 基差", "status": "live", "source": "示例数据包（离线构造）", "detail": ""},
+        {"field": "舆情热度", "status": "live", "source": "示例数据包（离线构造）", "detail": ""},
+        {"field": "政策事件", "status": "live", "source": "示例数据包（离线构造）", "detail": ""},
+    ]
     return {
         "as_of": as_of,
         "source": "demo",
+        "provenance": demo_provenance,
         "notes": ["示例数据包：用于离线渲染模板与回归测试，不代表真实行情"],
         "indices": [
             {"name": "沪深300", "pct": 0.62, "pct_5d": 1.85, "amount": 5120.0,
@@ -873,13 +1293,18 @@ def demo_bundle(as_of=DEMO_AS_OF) -> dict:
 # ---------------------------------------------------------------- 数据体检
 def _quality(bundle: dict) -> dict:
     """按五类数据口径检查完整度，并复核异常值（±20% 偏离）。"""
+    funds = bundle.get("funds") or {}
+    macro = bundle.get("macro") or {}
+    valuation = bundle.get("valuation") or {}
     checks = {
         "market": bool(bundle.get("indices")),
-        "fundamental": bool(bundle.get("valuation") or bundle.get("earnings")
-                            or bundle.get("consensus")),
-        "flow": bool(bundle.get("funds")),
+        "fundamental": bool(bundle.get("earnings") or bundle.get("consensus")
+                            or any(v.get("pe") is not None or v.get("price_pct") is not None
+                                   for v in valuation.values())),
+        "flow": any(funds.get(key) for key in ("margin", "main_net", "north",
+                                               "lhb_inst", "lhb_hot")),
         "alt": bool(bundle.get("sentiment") or bundle.get("events")),
-        "macro": bool(bundle.get("macro")),
+        "macro": any(macro.get(key) for key in ("cgb10y", "commodity", "gold", "fx")),
     }
     classes = []
     for item in DATA_CLASSES:
@@ -909,11 +1334,13 @@ def _quality(bundle: dict) -> dict:
         if abs(ratio) > SCORING["turnover_shock"]:
             anomalies.append(f"两市成交额环比 {ratio * 100:+.1f}%，超过 "
                              f"±{SCORING['turnover_shock'] * 100:.0f}% 阈值，需复核是否含口径变更")
+    detail = list(bundle.get("provenance") or [])
     return {
         "score": round(got / total * 100) if total else 0,
         "classes": classes,
         "anomalies": anomalies,
         "notes": list(bundle.get("notes") or []),
+        "detail": detail,
         "sources": [{"label": c["label"], "primary": c["primary"], "backup": c["backup"]}
                     for c in DATA_CLASSES],
     }
@@ -964,14 +1391,20 @@ def _valuation_rows(bundle: dict) -> list:
         item = valuation.get(name) or {}
         pe, pb = _num(item.get("pe")), _num(item.get("pb"))
         pe_pct, pb_pct = _num(item.get("pe_pct")), _num(item.get("pb_pct"))
+        price_pct = _num(item.get("price_pct"))
+        # 只有真正的 PE/PB 分位才进「估值分位」；价格分位单独作为代理字段输出，
+        # 两者在报告里必须能区分，否则就是拿价格冒充估值。
+        zone_pct = pe_pct if pe_pct is not None else None
         zone = "—"
-        if pe_pct is not None:
-            zone = ("低估" if pe_pct < SCORING["valuation_low"]
-                    else ("高估" if pe_pct > SCORING["valuation_high"] else "合理"))
+        if zone_pct is not None:
+            zone = ("低估" if zone_pct < SCORING["valuation_low"]
+                    else ("高估" if zone_pct > SCORING["valuation_high"] else "合理"))
+        status = "ok" if pe_pct is not None else ("proxy" if (price_pct is not None or pe is not None)
+                                                  else "missing")
         rows.append({
             "name": name,
-            "pe": pe, "pb": pb, "pe_pct": pe_pct, "pb_pct": pb_pct, "zone": zone,
-            "status": "ok" if pe is not None else "missing",
+            "pe": pe, "pb": pb, "pe_pct": pe_pct, "pb_pct": pb_pct,
+            "price_pct": price_pct, "zone": zone, "status": status,
         })
     return rows
 
@@ -1008,14 +1441,22 @@ def _dim_fundamental(bundle: dict) -> dict:
         if row["status"] == "missing":
             metrics.append(_metric(f"{row['name']} 估值", None))
             continue
-        pct_text = (f"{row['pe_pct']:.0f}% 分位" if row["pe_pct"] is not None
-                    else "分位暂缺")
+        if row["pe_pct"] is not None:
+            pct_text = f"PE {row['pe_pct']:.0f}% 分位 · {row['zone']}"
+            status, note = "ok", ""
+        elif row["price_pct"] is not None:
+            pct_text = f"估值分位暂缺，价格分位 {row['price_pct']:.0f}%（代理）"
+            status, note = "proxy", "价格分位不等于估值分位"
+        else:
+            pct_text = "估值分位暂缺"
+            status, note = "proxy", "缺 10 年估值序列，仅给原值"
         metrics.append(_metric(
             f"{row['name']} PE / PB",
-            f"{row['pe']:.2f} / {row['pb']:.2f}" if row["pb"] is not None else f"{row['pe']:.2f}",
-            delta=f"{pct_text} · {row['zone']}",
-            status="ok" if row["pe_pct"] is not None else "proxy",
-            note="" if row["pe_pct"] is not None else "缺 10 年估值序列，仅给原值",
+            f"{row['pe']:.2f} / {row['pb']:.2f}" if row["pb"] is not None and row["pe"] is not None
+            else (f"{row['pe']:.2f}" if row["pe"] is not None
+                  else (f"PB {row['pb']:.2f}" if row["pb"] is not None else None)),
+            delta=pct_text, status=status if _num(row["pe"]) is not None else "missing",
+            note=note,
         ))
 
     highlights = []
@@ -1174,6 +1615,11 @@ def _dim_allocation(bundle: dict) -> dict:
         series = history.get(asset["name"])
         asset["w1"] = _cum_return(series, 5) if series else None
         asset["m1"] = _cum_return(series, 21) if series else None
+        if asset["name"] == "现金" and cash is not None:
+            # 货币基金按当日收益率恒定复利推算：这是口径假设，不是实测，标代理。
+            asset["w1"] = round(((1 + cash / 100) ** 5 - 1) * 100, 4)
+            asset["m1"] = round(((1 + cash / 100) ** 21 - 1) * 100, 4)
+            asset["proxy_history"] = True
     ranked = sorted([a for a in assets if a["ret"] is not None],
                     key=lambda a: a["ret"], reverse=True)
 
@@ -1210,7 +1656,8 @@ def _dim_allocation(bundle: dict) -> dict:
                 delta=f"共 {len(ranked)} 类资产有当日收益" if ranked else None),
         _metric("沪深300 盈利收益率", _pct(earnings_yield, 2, signed=False) if earnings_yield else None,
                 delta=f"10Y 国债 {_pct(cgb, 2, signed=False)}" if cgb is not None else None),
-        _metric("股债性价比", _pct(spread, 2) if spread is not None else None,
+        _metric("股债性价比（百分点）",
+                f"{spread:+.2f}pct" if spread is not None else None,
                 delta=(f"历史 {spread_pct:.1f}% 分位 · {bias}" if spread_pct is not None
                        else "点差为实测值；历史分位需 20 个点以上的点差序列")),
         _metric("风险平价 · 股票目标仓位",
@@ -1270,9 +1717,9 @@ def _factor_list(bundle: dict) -> list:
         ret = _num(item.get("ret"))
         if ret is None:
             continue
-        rows.append({"key": item.get("key") or item.get("label") or "—",
-                     "label": item.get("label") or item.get("key") or "—",
-                     "ret": ret})
+        label = item.get("label") or item.get("key") or "—"
+        rows.append({"key": item.get("key") or label, "label": label, "ret": ret,
+                     "proxy": bool(item.get("proxy"))})
     rows.sort(key=lambda r: r["ret"], reverse=True)
     return rows
 
@@ -1307,10 +1754,14 @@ def _dim_alpha(bundle: dict) -> dict:
 
     metrics = []
     if factors:
+        proxy_count = sum(1 for f in factors if f.get("proxy"))
         metrics.append(_metric("因子收益排序", " > ".join(
             f"{f['label']} {_pct(f['ret'])}" for f in factors),
-            delta=f"有效因子：{factors[0]['label']}、{factors[1]['label']}"
-                  if len(factors) > 1 else None))
+            delta=(f"有效因子：{factors[0]['label']}、{factors[1]['label']}"
+                   if len(factors) > 1 else None)
+                  + (f"；{proxy_count}/{len(factors)} 项为指数收益差代理" if proxy_count else ""),
+            status="proxy" if proxy_count else "ok",
+            note="" if not proxy_count else "质量 / 换手率 / 波动率需个股因子库"))
     else:
         metrics.append(_metric("因子收益排序", None))
     metrics.append(_metric(
@@ -1372,17 +1823,30 @@ def _dim_alpha(bundle: dict) -> dict:
 
 
 def _theme_strength(theme: dict) -> tuple:
+    """主题强度：有涨停家数 / 连板天数时用完整口径；只有成交额占比时用代理口径。
+
+    代理口径的阈值单独写（成交额占比 ≥5% 强、≥3% 中），不拿完整口径的 60 分线去卡
+    占比数据，否则所有板块都会被误判成「弱」。
+    """
     share = _num(theme.get("turnover_share")) or 0.0
-    limit_up = _num(theme.get("limit_up")) or 0.0
-    days = _num(theme.get("days")) or 0.0
-    score = share * 5 + min(limit_up, 20) * 2 + min(days, 5) * 2
+    limit_up = _num(theme.get("limit_up"))
+    days = _num(theme.get("days"))
+    if limit_up is None and days is None:
+        if share >= SCORING["theme_proxy_strong"]:
+            level = "强"
+        elif share >= SCORING["theme_proxy_mid"]:
+            level = "中"
+        else:
+            level = "弱"
+        return round(share, 1), level, True
+    score = share * 5 + min(limit_up or 0, 20) * 2 + min(days or 0, 5) * 2
     if score >= SCORING["theme_strong"]:
         level = "强"
     elif score >= SCORING["theme_mid"]:
         level = "中"
     else:
         level = "弱"
-    return round(score, 1), level
+    return round(score, 1), level, False
 
 
 def _dim_beta(bundle: dict) -> dict:
@@ -1414,17 +1878,25 @@ def _dim_beta(bundle: dict) -> dict:
             "turnover_growth": growth,
             "main_net": _num(item.get("main_net")),
             "limit_up": _num(item.get("limit_up")),
+            "max_board": _num(item.get("max_board")),
         })
     ranked = [i for i in industries if i["pct"] is not None]
     ranked.sort(key=lambda i: i["pct"], reverse=True)
-    strong, weak = ranked[:5], ranked[-5:][::-1] if len(ranked) >= 5 else ranked[::-1]
+    # 板块数量不足 10 个时按三等分切，保证同一个板块不会既是「强势」又是「弱势」。
+    if len(ranked) >= 10:
+        strong, weak = ranked[:5], ranked[-5:][::-1]
+    else:
+        size = max(1, len(ranked) // 3)
+        strong, weak = ranked[:size], ranked[::-1][:size]
+    weak = [row for row in weak if row not in strong]
 
     themes = []
     for item in bundle.get("themes") or []:
         if not isinstance(item, dict):
             continue
-        score, level = _theme_strength(item)
+        score, level, partial = _theme_strength(item)
         themes.append({"name": item.get("name") or "—", "score": score, "level": level,
+                       "partial": partial,
                        "share": _num(item.get("turnover_share")),
                        "limit_up": _num(item.get("limit_up")),
                        "days": _num(item.get("days"))})
@@ -1442,10 +1914,20 @@ def _dim_beta(bundle: dict) -> dict:
                 delta=f"近 5 日累计剪刀差 {_pct(ls_5d)}" if ls_5d is not None else "近 5 日趋势待历史"),
         _metric("价值 − 成长", _pct(value_growth) if value_growth is not None else None,
                 delta=f"近 5 日累计 {_pct(vg_5d)}" if vg_5d is not None else "近 5 日趋势待历史"),
-        _metric("强势行业 TOP5", "、".join(f"{i['name']} {_pct(i['pct'])}" for i in strong) or None),
-        _metric("弱势行业 TOP5", "、".join(f"{i['name']} {_pct(i['pct'])}" for i in weak) or None),
-        _metric("主题强度", "、".join(f"{t['name']}·{t['level']}" for t in themes[:3]) or None,
-                delta=(f"最高强度分 {themes[0]['score']:.0f}" if themes else None)),
+        _metric(f"强势行业 TOP{max(1, len(strong))}",
+                "、".join(f"{i['name']} {_pct(i['pct'])}" for i in strong) or None,
+                delta=f"行业样本 {len(ranked)} 个" if ranked else None),
+        _metric(f"弱势行业 TOP{max(1, len(weak))}",
+                "、".join(f"{i['name']} {_pct(i['pct'])}" for i in weak) or None,
+                delta="板块不足 10 个时按三等分切，强弱不重叠" if 0 < len(ranked) < 10 else None),
+        _metric("主题强度", "、".join(
+                    f"{t['name']}·{t['level']}" + ("（代理）" if t.get("partial") else "")
+                    for t in themes[:3]) or None,
+                delta=(("仅按成交额占比判强弱 · 最高 " if themes and themes[0].get("partial")
+                        else "最高强度分 ") + f"{themes[0]['score']:.1f}") if themes else None,
+                status="proxy" if themes and themes[0].get("partial") else "ok",
+                note="" if not (themes and themes[0].get("partial"))
+                     else "缺涨停家数与连板天数"),
     ]
 
     highlights = []
@@ -1494,6 +1976,37 @@ def _dim_beta(bundle: dict) -> dict:
                        "themes": themes, "dominant": dominant}}
 
 
+def _provenance_stats(provenance: list) -> dict:
+    """采集明细的计数：实测 / 代理 / 未取得各几项，给卡片和页面做一句话概括。"""
+    stats = {"live": 0, "proxy": 0, "missing": 0, "total": 0}
+    for row in provenance or []:
+        status = row.get("status")
+        if status not in stats:
+            continue
+        stats[status] += 1
+        stats["total"] += 1
+    return stats
+
+
+def _streak_text(rows: list) -> str | None:
+    """连续上榜统计：席位明细里没有上榜天数时说明「未取得」，不写「0 只」冒充结论。"""
+    if not rows:
+        return None
+    streaks = [_num(row.get("streak")) for row in rows]
+    if all(value is None for value in streaks):
+        return "连续上榜天数未取得"
+    return f"连续上榜 {sum(1 for value in streaks if (value or 0) >= 2)} 只"
+
+
+def _north_metric(funds: dict) -> dict:
+    """北向资金：有数就照给，没数说明「不适用」而不是打 ⚠️（它已停止披露，不是今天缺数据）。"""
+    value = _num(funds.get("north"))
+    if value is not None:
+        return _metric("北向资金", f"{value:+.1f} 亿")
+    return _metric_na("北向资金", funds.get("north_note")
+                      or "自 2024-08 停止实时披露，改用主力资金与两融观察")
+
+
 def _dim_alt(bundle: dict) -> dict:
     sentiment = [s for s in (bundle.get("sentiment") or []) if isinstance(s, dict)]
     sentiment.sort(key=lambda s: _num(s.get("heat")) or 0, reverse=True)
@@ -1516,19 +2029,16 @@ def _dim_alt(bundle: dict) -> dict:
         _metric("龙虎榜机构净买入 TOP3",
                 "、".join(f"{s.get('name')} {_num(s.get('net')):+.2f} 亿"
                           for s in inst[:3] if _num(s.get("net")) is not None) or None,
-                delta=(f"连续上榜 {sum(1 for s in inst if (_num(s.get('streak')) or 0) >= 2)} 只"
-                       if inst else None)),
+                delta=_streak_text(inst)),
         _metric("知名游资净买入 TOP3",
                 "、".join(f"{s.get('name')} {_num(s.get('net')):+.2f} 亿"
                           for s in hot[:3] if _num(s.get("net")) is not None) or None,
-                delta=(f"连续上榜 {sum(1 for s in hot if (_num(s.get('streak')) or 0) >= 2)} 只"
-                       if hot else None)),
+                delta=_streak_text(hot)),
         _metric("重要事件",
                 f"{len(events)} 条" if events else None,
                 delta=(f"强影响 {sum(1 for e in events if e.get('impact') == '强')} 条"
                        if events else None)),
-        _metric("北向资金", _num(funds.get("north")),
-                note=funds.get("north_note") or "自 2024-08 停止实时披露"),
+        _north_metric(funds),
     ]
 
     highlights = []
@@ -1849,6 +2359,7 @@ def analyze(bundle: dict, as_of=None) -> dict:
             "amount": _num(row.get("amount")),
             "pe": _num(valuation.get("pe")),
             "pe_pct": _num(valuation.get("pe_pct")),
+            "price_pct": _num(valuation.get("price_pct")),
             "stale": bool(row.get("stale")),
         })
     turnover = bundle.get("turnover") or {}
@@ -1885,8 +2396,10 @@ def analyze(bundle: dict, as_of=None) -> dict:
         "strategy": strategy,
         "risks": risks,
         "notes": bundle.get("notes") or [],
+        "provenance": bundle.get("provenance") or [],
         "disclaimer": DISCLAIMER,
     }
+    report["provenance_stats"] = _provenance_stats(report["provenance"])
     report["summary"] = _summary(report)
     report["markdown"] = render_markdown(report)
     return report
@@ -1917,24 +2430,38 @@ def render_markdown(report: dict) -> str:
     lines.append("| 指数 | 当日涨跌幅 | 近5日涨跌幅 | 成交额（亿） | 估值分位（近10年） |")
     lines.append("|------|------------|-------------|--------------|--------------------|")
     for row in report["overview"]["indices"]:
-        pe_pct = row.get("pe_pct")
+        pe_pct, price_pct = row.get("pe_pct"), row.get("price_pct")
+        if pe_pct is not None:
+            pct_cell = f"{pe_pct:.0f}%"
+        elif price_pct is not None:
+            # 估值分位没取到就用价格分位顶上，但必须写明是代理，不能混成同一个数。
+            pct_cell = f"{price_pct:.0f}%（价格代理）"
+        else:
+            pct_cell = "数据暂缺 ⚠️"
         lines.append("| {name} | {pct} | {pct5} | {amount} | {pe_pct} |".format(
             name=row.get("name") or "—",
             pct=_md_pct(row.get("pct")),
             pct5=_md_pct(row.get("pct_5d")),
             amount=f"{row['amount']:,.0f}" if row.get("amount") is not None else "数据暂缺 ⚠️",
-            pe_pct=(f"{pe_pct:.0f}%" if pe_pct is not None else "数据暂缺 ⚠️"),
+            pe_pct=pct_cell,
         ))
     if not report["overview"]["indices"]:
         lines.append("| 沪深300 / 中证500 / 中证1000 | 数据暂缺 ⚠️ | 数据暂缺 ⚠️ | 数据暂缺 ⚠️ | 数据暂缺 ⚠️ |")
     lines.append("")
 
     breadth = report["overview"]["breadth"] or {}
-    up_text = breadth.get("up_text") or "数据暂缺 ⚠️"
-    down_text = breadth.get("down_text") or "数据暂缺 ⚠️"
+    def _count(key, text_key, unit="只"):
+        count = breadth.get(key)
+        if count is not None:
+            return f"{int(count)} {unit}"
+        return breadth.get(text_key) or "数据暂缺 ⚠️"
+    up_text = _count("up_count", "up_text")
+    down_text = _count("down_count", "down_text")
+    flat = breadth.get("flat_count")
+    flat_text = f"，平盘 {int(flat)} 只" if flat is not None else ""
     limit_up = breadth.get("limit_up")
     limit_down = breadth.get("limit_down")
-    lines.append(f"市场情绪：上涨 {up_text} / 下跌 {down_text}，"
+    lines.append(f"市场情绪：上涨 {up_text} / 下跌 {down_text}{flat_text}，"
                  f"涨停 {limit_up if limit_up is not None else '数据暂缺 ⚠️'} 家 / "
                  f"跌停 {limit_down if limit_down is not None else '数据暂缺 ⚠️'} 家")
     funds = report["overview"]["funds"]
@@ -1945,7 +2472,8 @@ def render_markdown(report: dict) -> str:
     if funds.get("north") is not None:
         north_text = f"北向资金净流入 {funds['north']:+.1f} 亿"
     else:
-        north_text = "北向资金 数据暂缺 ⚠️（自 2024-08 停止实时披露）"
+        # 北向已停止披露：写「不适用」而不是 ⚠️，⚠️ 只留给「今天本该有却没取到」的项
+        north_text = "北向资金 不适用（自 2024-08 起停止实时披露，改用主力资金与两融观察）"
     margin_text = "数据暂缺 ⚠️"
     if funds.get("margin") is not None and funds.get("margin_prev"):
         change = funds["margin"] - funds["margin_prev"]
@@ -1975,6 +2503,29 @@ def render_markdown(report: dict) -> str:
             lines.append(f"- {note}")
         lines.append("")
 
+    detail = quality.get("detail") or []
+    if detail:
+        stats = report.get("provenance_stats") or {}
+        lines.append("### 采集明细")
+        lines.append("")
+        if stats.get("total"):
+            lines.append(f"实测 {stats.get('live', 0)} 项 · 代理 {stats.get('proxy', 0)} 项 · "
+                         f"未取得 {stats.get('missing', 0)} 项（共 {stats['total']} 项）")
+            lines.append("")
+        if report.get("source") == "demo":
+            lines.append("> 示例数据包：状态表示「该字段是否有值」，数值为离线构造的示例，非真实行情。")
+            lines.append("")
+        lines.append("| 字段 | 状态 | 来源 / 缺口说明 |")
+        lines.append("|------|------|----------------|")
+        for item in detail:
+            mark = {"live": "✅ 实测", "proxy": "◐ 代理", "missing": "⚠️ 未取得"}.get(
+                item["status"], item["status"])
+            detail_text = item.get("detail") or ""
+            source = item.get("source") or ""
+            lines.append(f"| {item['field']} | {mark} | {source}"
+                         + (f" · {detail_text}" if detail_text else "") + " |")
+        lines.append("")
+
     # 二、五维
     lines.append("## 二、五大量化维度分析")
     lines.append("")
@@ -1983,9 +2534,11 @@ def render_markdown(report: dict) -> str:
         lines.append("")
         for metric in dim["metrics"]:
             value = metric["value"]
+            mark = "" if (metric["status"] == "proxy" and metric.get("note")) \
+                else _status_mark(metric["status"])
             note = f"（{metric['note']}）" if metric.get("note") else ""
             delta = f"　变化：{metric['delta']}" if metric.get("delta") else ""
-            lines.append(f"- {metric['label']}：{value}{_status_mark(metric['status'])}{note}{delta}")
+            lines.append(f"- {metric['label']}：{value}{mark}{note}{delta}")
         lines.append("")
         if dim["key"] == "fundamental":
             table = dim["tables"]
@@ -2019,11 +2572,12 @@ def render_markdown(report: dict) -> str:
             lines.append("| 资产 | 代理 | 当日 | 近1周 | 近1月 |")
             lines.append("|------|------|------|-------|-------|")
             for asset in table["assets"]:
+                suffix = "（代理）" if asset.get("proxy_history") else ""
                 lines.append("| {name} | {proxy} | {ret} | {w1} | {m1} |".format(
                     name=asset["name"], proxy=asset["proxy"],
                     ret=_md_pct(asset["ret"]),
-                    w1=_md_pct(asset["w1"]),
-                    m1=_md_pct(asset["m1"]),
+                    w1=_md_pct(asset["w1"]) + suffix,
+                    m1=_md_pct(asset["m1"]) + suffix,
                 ))
             lines.append("")
             if table["weights"]:
@@ -2053,28 +2607,61 @@ def render_markdown(report: dict) -> str:
         if dim["key"] == "beta":
             table = dim["tables"]
             if table["industries"]:
-                lines.append("| 行业 | 涨跌幅 | 成交额增速 | 主力净流入（亿） |")
-                lines.append("|------|--------|------------|------------------|")
+                has_growth = any(row.get("turnover_growth") is not None
+                                 for row in table["industries"])
+                has_limit = any(row.get("limit_up") is not None for row in table["industries"])
+                header = "| 行业 | 涨跌幅 |"
+                divider = "|------|--------|"
+                if has_growth:
+                    header += " 成交额增速 |"
+                    divider += "------------|"
+                if has_limit:
+                    header += " 涨停家数 | 连板高度 |"
+                    divider += "----------|----------|"
+                header += " 主力净流入（亿） |"
+                divider += "------------------|"
+                lines.append(header)
+                lines.append(divider)
                 for row in table["strong"] + [{"separator": True}] + table["weak"]:
                     if row.get("separator"):
-                        lines.append("| ⋯ 弱势行业 | | | |")
+                        lines.append("| ⋯ 弱势行业 |" + " |" * (header.count("|") - 2))
                         continue
-                    lines.append("| {name} | {pct} | {growth} | {net} |".format(
-                        name=row.get("name") or "—",
-                        pct=_pct(row.get("pct")) if row.get("pct") is not None else "—",
-                        growth=(f"{row['turnover_growth']:+.0f}%"
-                                if row.get("turnover_growth") is not None else "数据暂缺 ⚠️"),
-                        net=(f"{row['main_net']:+.1f}" if row.get("main_net") is not None else "—"),
-                    ))
+                    cells = [row.get("name") or "—",
+                             _pct(row.get("pct")) if row.get("pct") is not None else "—"]
+                    if has_growth:
+                        cells.append(f"{row['turnover_growth']:+.0f}%"
+                                     if row.get("turnover_growth") is not None else "—")
+                    if has_limit:
+                        cells.append(str(int(row["limit_up"]))
+                                     if row.get("limit_up") is not None else "—")
+                        cells.append(f"{int(row['max_board'])} 板"
+                                     if row.get("max_board") else "—")
+                    cells.append(f"{row['main_net']:+.1f}"
+                                 if row.get("main_net") is not None else "—")
+                    lines.append("| " + " | ".join(cells) + " |")
+                notes = []
+                if not has_growth:
+                    notes.append("成交额增速需历史板块成交额序列，本次未取得（列已省略）")
+                if has_limit:
+                    notes.append("涨停家数 / 连板高度取自当日涨停池，按板块名精确匹配")
+                if notes:
+                    lines.append("")
+                    lines.append("　注：" + "；".join(notes) + "。")
                 lines.append("")
             if table["themes"]:
+                proxy_only = all(t.get("partial") for t in table["themes"])
                 lines.append("| 主题 | 强度分 | 评级 | 成交额占比 | 涨停家数 | 连板天数 |")
                 lines.append("|------|--------|------|------------|----------|----------|")
                 for theme in table["themes"]:
-                    lines.append(f"| {theme['name']} | {theme['score']:.0f} | {theme['level']} | "
+                    level = theme["level"] + ("（代理）" if theme.get("partial") else "")
+                    lines.append(f"| {theme['name']} | {theme['score']:.0f} | {level} | "
                                  f"{theme['share'] if theme['share'] is not None else '—'}% | "
                                  f"{int(theme['limit_up']) if theme['limit_up'] is not None else '—'} | "
                                  f"{int(theme['days']) if theme['days'] is not None else '—'} |")
+                if proxy_only:
+                    lines.append("")
+                    lines.append("　注：仅按成交额占比判强弱（阈值 ≥5% 强 / ≥3% 中），"
+                                 "涨停家数与连板天数未取得。")
                 lines.append("")
         if dim["key"] == "alt":
             table = dim["tables"]
@@ -2265,10 +2852,16 @@ def build_html_section(report: dict, level: int = 1) -> str:
     risks = sorted(report["risks"], key=lambda r: level_rank.get(r["level"], 3))[:3]
     risk_text = "；".join(f"{r['title']}（{r['level']}）" for r in risks)
     detail = position["reason"]
+    stats = report.get("provenance_stats") or {}
+    provenance_line = ""
+    if stats.get("total"):
+        provenance_line = (f'<div class="ev">· 采集口径：实测 {stats.get("live", 0)} 项 / '
+                           f'代理 {stats.get("proxy", 0)} 项 / 未取得 {stats.get("missing", 0)} 项</div>')
     return (
         '<div class="card"><div class="hdr"><span class="tag">AI 量化日报</span>'
         f'<span class="sub">15:30 采集 · 16:00 交付 · 数据完整度 {quality["score"]}%</span></div>'
         f'<div class="txt">{_esc(report["summary"])}</div>'
+        f'{provenance_line}'
         f'<table class="tbl">{"".join(rows)}'
         f'<tr><td class="td-n">仓</td><td class="td-t"><div>权益仓位中枢 '
         f'<b>{position["value"]}%</b>'

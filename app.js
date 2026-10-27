@@ -538,6 +538,27 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
   }
   function arr(value){ return Array.isArray(value)?value:[]; }
 
+  /* 采集明细：逐字段说明这次日报的数字从哪来、哪些是代理、哪些没取到。
+     数据源故障与缺口写在报告里，不让读者自己猜。 */
+  function renderProvenance(data){
+    const el=document.getElementById('quantProvenance');
+    if(!el) return;
+    const rows=arr(data.provenance);
+    const stats=data.provenance_stats||{};
+    if(!rows.length){
+      el.innerHTML='<summary>采集明细（本次未返回）</summary>';
+      return;
+    }
+    const head=`采集明细 · 实测 ${Number(stats.live||0)} / 代理 ${Number(stats.proxy||0)} / 未取得 ${Number(stats.missing||0)}（点击展开）`;
+    const body=rows.map(r=>(
+      `<tr><td>${esc(r.field)}</td><td>${provMark(r.status)}</td>`
+      + `<td>${esc(r.source||'')}${r.detail?`<small>${esc(r.detail)}</small>`:''}</td></tr>`
+    )).join('');
+    el.innerHTML=`<summary>${esc(head)}</summary>`
+      + '<table class="quant-action-table"><tr><th>字段</th><th>状态</th><th>来源 / 缺口说明</th></tr>'
+      + body + '</table>';
+  }
+
   function render(data){
     if(!data || data.error) return;
     const stamp=esc(data.as_of||'今日');
@@ -876,7 +897,13 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
   function mark(status){
     if(status==='missing'||status==='anomaly') return ' ⚠️';
     if(status==='proxy') return '（代理）';
-    return '';
+    return '';   // na（如北向已停止披露）= 不适用，不打警告
+  }
+  function provMark(status){
+    if(status==='live') return '✅ 实测';
+    if(status==='proxy') return '◐ 代理';
+    if(status==='missing') return '⚠️ 未取得';
+    return esc(status||'');
   }
   function signalClass(signal){
     if(signal==='看空') return 'press';
@@ -931,6 +958,27 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
     }).join('');
   }
 
+  /* 采集明细：逐字段说明这次日报的数字从哪来、哪些是代理、哪些没取到。
+     数据源故障与缺口写在报告里，不让读者自己猜。 */
+  function renderProvenance(data){
+    const el=document.getElementById('quantProvenance');
+    if(!el) return;
+    const rows=arr(data.provenance);
+    const stats=data.provenance_stats||{};
+    if(!rows.length){
+      el.innerHTML='<summary>采集明细（本次未返回）</summary>';
+      return;
+    }
+    const head=`采集明细 · 实测 ${Number(stats.live||0)} / 代理 ${Number(stats.proxy||0)} / 未取得 ${Number(stats.missing||0)}（点击展开）`;
+    const body=rows.map(r=>(
+      `<tr><td>${esc(r.field)}</td><td>${provMark(r.status)}</td>`
+      + `<td>${esc(r.source||'')}${r.detail?`<small>${esc(r.detail)}</small>`:''}</td></tr>`
+    )).join('');
+    el.innerHTML=`<summary>${esc(head)}</summary>`
+      + '<table class="quant-action-table"><tr><th>字段</th><th>状态</th><th>来源 / 缺口说明</th></tr>'
+      + body + '</table>';
+  }
+
   function render(data){
     if(!data || data.error) return;
     if(data.status==='skipped'){
@@ -941,6 +989,7 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
       dimsEl.innerHTML='';
       stratEl.innerHTML='';
       renderRisks([]);
+      renderProvenance({provenance:[]});
       return;
     }
     const quality=data.quality||{};
@@ -957,6 +1006,7 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
     renderDims(dims);
     renderStrategy(data.strategy||{});
     renderRisks(data.risks||[]);
+    renderProvenance(data);
     if(pillEl) pillEl.textContent=`数据完整度 ${Number(quality.score||0)}%`;
   }
 
@@ -966,7 +1016,22 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
       const res=await fetch('api/quant');
       if(!res.ok) return;
       const data=await res.json();
-      if(data && !data.error) render(data);
+      if(!data || data.error) return;
+      const score=Number((data.quality||{}).score||0);
+      if(data.status!=='skipped' && score<40){
+        /* 实时采集没拿到当日数据（本机无外网 / 接口故障）：保留标注过的示例快照，
+           只说明原因与缺口入口，不把「数据暂缺」渲染成看着像当日结论的卡片。 */
+        if(pillEl) pillEl.textContent=`实时采集受限 · 完整度 ${score}%`;
+        if(metaEl && !metaEl.dataset.restricted){
+          metaEl.dataset.restricted='1';
+          const note=document.createElement('span');
+          note.textContent=`实时采集未取得当日数据（完整度 ${score}%），以下为 2026-10-26 示例快照；`
+            + '逐字段缺口见 /api/quant?format=json 的 provenance';
+          metaEl.appendChild(note);
+        }
+        return;
+      }
+      render(data);
     }catch(e){ /* 静态托管 / 离线：保留页面里的示例快照 */ }
   }
   load();
