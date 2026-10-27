@@ -169,6 +169,22 @@ class ServerSmokeTest(unittest.TestCase):
         self.assertIn("market_impact", shallow)
         self.assertIn("headline", shallow["market_impact"])
 
+    def test_big_v_endpoint_returns_framework_analysis(self):
+        # GET /api/big-v：六步框架 + 三个领域 + 情景树，且两个路径别名返回同结构。
+        status, raw = request(self.base, "GET", "/api/big-v")
+        self.assertEqual(status, 200)
+        data = json.loads(raw)
+        for key in ("column", "analyst", "headline", "framework_steps", "domains",
+                    "scenarios", "falsifiers", "references", "disclaimer", "counts"):
+            self.assertIn(key, data)
+        self.assertEqual(data["column"], "大 V 分析")
+        self.assertEqual(len(data["framework_steps"]), 6)
+        self.assertEqual([d["label"] for d in data["domains"]], ["政治", "地缘", "经济"])
+        self.assertEqual(sum(s["weight"] for s in data["scenarios"]), 100)
+        status_alias, raw_alias = request(self.base, "GET", "/api/bigv")
+        self.assertEqual(status_alias, 200)
+        self.assertEqual(json.loads(raw_alias)["column"], "大 V 分析")
+
     def test_run_without_token_is_503_not_405(self):
         status, raw = request(
             self.base, "POST", "/api/run", body={},
@@ -244,6 +260,7 @@ class MockedPushTest(unittest.TestCase):
                 self.assertIn("数据源", payload["content"])
                 self.assertIn("AI 板块机会", payload["content"])  # 板块机会清单随简报一同推送
                 self.assertIn("AI 政策分析", payload["content"])  # 政策面板块（鹰鸽取向）同样随简报推送
+                self.assertIn("大 V 分析", payload["content"])  # 新增框架推演栏目同样随简报推送
                 # 「AI 看盘」紧跟「AI 每日总结」；政策分析在其后，再接深度层与研报两张卡片。
                 for card in ("AI 看盘", "AI 政策深度", "AI 政策研报"):
                     self.assertIn(card, payload["content"])

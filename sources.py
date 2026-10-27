@@ -39,6 +39,8 @@
     analyze_policy()   : 「AI 政策分析」引擎（政策维度热度 + 多空方向 + 鹰鸽取向；始终附带近30日全球政策
                          对 A股/港股/美股的影响。deep=True 时再叠加知识库检索 / 修饰词口径 / 舆情情感 /
                          传导图谱 / 分析师推理链 / 研报 / LSTM × Prophet）
+    analyze_big_v()    : 「大 V 分析」引擎（江学勤「预测历史」框架启发的政治 / 地缘 / 经济 AI 仿推演；
+                         结构史观 + 博弈论 + 成本约束 + 历史类比 + 情景证伪，明确非本人发言）
     retrieve_policy_context() : 政策法规知识库检索（RAG 的检索环节，返回历史政策条目与检索理由）
     lstm_policy_forecast()    : 纯 Python 单层 LSTM + BPTT，评估政策后的中长期走势节奏
     prophet_policy_decompose(): Prophet 式加性分解（趋势 + 季节 + 政策效应），剥离季节看政策窗口波动
@@ -53,8 +55,8 @@
     check_market_freshness() : 大盘数据新鲜度检查（推送前闸门：不是最新就不推）
     collect_market_for_push(): 推送入口专用，一次抓取返回 (market, freshness)
     build_html(brief)  : 由采集结果生成适合微信阅读的 HTML 简报（「AI 每日总结 → AI 看盘 → AI 情绪热力图
-                         → AI 政策分析 → AI 政策深度 → AI 政策研报 → AI 板块机会」，正文最后追加「全网快讯」列表：
-                         每源 3 条、跨源去重、不标注来源）
+                         → AI 政策分析 → AI 政策深度 → AI 政策研报 → AI 板块机会 → 大 V 分析」，正文最后追加
+                         「全网快讯」列表：每源 3 条、跨源去重、不标注来源）
 """
 from __future__ import annotations
 
@@ -69,6 +71,7 @@ import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from datetime import datetime, timedelta, timezone
+import big_v_analysis
 import deepseek_search
 import policy_impact
 from urllib.parse import urlencode, urljoin
@@ -1448,6 +1451,8 @@ def analyze_brief(brief: dict, deep_policy: bool = False) -> dict:
                       1 市场情绪 2 多空博弈概率 3 利好/利差板块 4 资金流向分析
         policy        「AI 政策分析」板块数据（analyze_policy() 的返回值：政策维度热度、
                       多空方向、鹰鸽取向与总结句；``deep_policy=True`` 时含深度层）
+        big_v         「大 V 分析」板块数据（analyze_big_v() 的返回值：六步框架、
+                      政治 / 地缘 / 经济推演、情景博弈树、证伪信号与公开资料）
     """
     theme_sources = {tag: set() for tag, _ in _THEMES}
     theme_mentions = {tag: 0 for tag in theme_sources}
@@ -1589,6 +1594,8 @@ def analyze_brief(brief: dict, deep_policy: bool = False) -> dict:
         "flow": flow,
         "points": points,
         "heatmap": heatmap,
+        # 「大 V 分析」与全部分析栏目共用同一批标题；纯本地规则推理，不增加外部 API 开销。
+        "big_v": analyze_big_v(brief),
         # 深度层（知识库检索 / 推理链 / 模型）默认不在这里跑：analyze_brief 被 /api 与测试高频调用，
         # 推送与页面渲染走 analyze_policy(deep=True) 显式开启，避免重复计算。
         "policy": analyze_policy(brief, deep=deep_policy),
@@ -1599,6 +1606,16 @@ def analyze_brief(brief: dict, deep_policy: bool = False) -> dict:
             for key in SECTION_KEYS if section_items.get(key, 0) > 0
         ],
     }
+
+
+def analyze_big_v(brief: dict, as_of=None) -> dict:
+    """「大 V 分析」：江学勤「预测历史」框架启发的政治 / 地缘 / 经济 AI 仿推演。
+
+    实现在 :mod:`big_v_analysis`，复用同一批 ``brief`` 标题。这里传入
+    :func:`section_of` 仅用于标注来源板块，不改变推演结论。输出为结构化字典，
+    可直接交给 ``GET /api/big-v`` 或 :func:`build_html` 渲染。
+    """
+    return big_v_analysis.analyze_big_v(brief, as_of=as_of, section_lookup=section_of)
 
 
 # ---------------------------------------------------------------- AI 情绪热力图 · 关键词级线索（面向股市投资）
@@ -5141,7 +5158,7 @@ def build_html(
     ``series`` 为「AI 政策研报」板块时序模型（LSTM / Prophet 式分解）的输入序列：
     缺省时用 :func:`get_policy_series`——推送路径缓存的真实日 K，否则明确标注的合成演示序列。
     ``max_items_per_source`` / ``max_length`` 参数保留用于兼容既有调用与推送容量配置；
-    正文以分析栏目为主（AI 每日总结 → AI 看盘 → AI 情绪热力图 → AI 政策分析 → AI 政策深度 → AI 政策研报 → AI 板块机会），
+    正文以分析栏目为主（AI 每日总结 → AI 看盘 → AI 情绪热力图 → AI 政策分析 → AI 政策深度 → AI 政策研报 → AI 板块机会 → 大 V 分析），
     「AI 看盘」紧跟「AI 每日总结」之后，让最新的 A 股 / 港股 / 美股行情在开篇就能看到；
     不展示监测平台清单、时间核对或推送协议说明。
     **正文最后（免责声明与作者署名之前）追加「全网快讯」列表**：每个数据源固定保留
@@ -5169,6 +5186,7 @@ def build_html(
     up_text = "#5f8f00"      # 上涨：深柠檬绿（白底可读）
     danger_hi = "#767676"    # 下跌 / 承压：中性灰（单色点缀体系）
     analysis = analyze_brief(brief)
+    bigv = analysis.get("big_v") or analyze_big_v(brief)
     hl_tags = list(dict.fromkeys(
         analysis["sectors"] + analysis["sectors_up"] + analysis["sectors_down"]
         + [entry["tag"] for entry in analysis["opportunity_sectors"]]
@@ -5773,6 +5791,111 @@ f'<div class="ftr">近30日只统计已核验发文日的全球政策，已观�
         f'</style>'
     )
 
+    def _render_big_v(level: int = 2) -> str:
+        """「大 V 分析」卡片：框架六步 + 政治 / 地缘 / 经济因果链 + 升级博弈树。
+
+        ``level=2`` 全量；``level=1`` 保留领域与情景、去掉框架长文；``level=0``
+        压到总判断 + 三领域结论 + 基准情景，主卡片本身始终保留。
+        """
+        domains = bigv.get("domains") or []
+        rows = []
+        compact = level <= 0
+
+        if not compact:
+            rows.append(
+                '<tr><td colspan="2" class="td-hdr"><span class="tag-w">六步逻辑推导</span> '
+                '<span class="sub">界定棋盘 → 激励 → 约束 → 升级博弈 → 历史类比 → 情景证伪</span></td></tr>'
+            )
+            if level >= 2:
+                step_html = "".join(
+                    f'<div class="ev">· <b>{_esc(step.get("no") or "")} '
+                    f'{_esc(step.get("label") or "")}</b>｜{_esc(step.get("question") or "")}</div>'
+                    for step in (bigv.get("framework_steps") or [])
+                )
+                rows.append(f'<tr><td class="td-n">✦</td><td class="td-t">'
+                            f'<div>框架：{_esc(bigv.get("name") or "")}（'
+                            f'{_esc(bigv.get("analyst") or "")}）· 只借鉴可验证方法，不模仿本人语气。</div>'
+                            f'{step_html}</td></tr>')
+
+        rows.append(
+            '<tr><td colspan="2" class="td-hdr"><span class="tag">政治 × 地缘 × 经济</span> '
+            '<span class="sub">观察 / 激励 / 约束 / 推演分层输出</span></td></tr>'
+        )
+        for rank, domain in enumerate(domains, 1):
+            chain_html = "".join(
+                f'<div class="ev">· {_esc(item)}</div>'
+                for item in (domain.get("chain") or [])[:5]
+            ) if not compact else ""
+            ev_html = "".join(
+                f'<div class="ev">· {_esc(ev.get("source") or "")}｜'
+                f'{_hl(_trunc(str(ev.get("title") or ""), 52))}</div>'
+                for ev in (domain.get("evidence") or [])[:2]
+            ) if level >= 2 else ""
+            rows.append(
+                f'<tr><td class="td-n">{rank:02d}</td><td class="td-t">'
+                f'<div><span class="tag">{_esc(domain.get("label") or "")}</span> '
+                f'<span class="tag-w">{_esc(domain.get("status") or "")}</span> '
+                f'<span class="sub">{_esc(domain.get("confidence") or "")}置信 · '
+                f'{domain.get("sources", 0)} 源 · {domain.get("mentions", 0)} 条提及</span></div>'
+                f'<div>{_esc(domain.get("conclusion") or "")}</div>'
+                f'{chain_html}{ev_html}</td></tr>'
+            )
+        if not domains:
+            rows.append('<tr><td colspan="2" class="sub" style="padding:6px 0;">'
+                        '当日样本暂无可用于框架推演的政治 / 地缘 / 经济证据。</td></tr>')
+
+        scenarios = bigv.get("scenarios") or []
+        if compact:
+            base = next((s for s in scenarios if s.get("key") == "base"), None)
+            if base:
+                rows.append(
+                    f'<tr><td class="td-n">基</td><td class="td-t"><div>'
+                    f'<span class="tag-w">基准情景</span> {_esc(base.get("trigger") or "")}</div>'
+                    f'<div class="ev">· 关注：{_esc("；".join(base.get("watch") or []))}</div></td></tr>'
+                )
+        elif level >= 1:
+            rows.append(
+                '<tr><td colspan="2" class="td-hdr"><span class="tag-w">升级博弈树</span> '
+                '<span class="sub">情景权重是启发式关注度，不是统计概率</span></td></tr>'
+            )
+            for scenario in scenarios:
+                watch_text = "；".join(str(item) for item in (scenario.get("watch") or []))
+                rows.append(
+                    f'<tr><td class="td-n">{_esc(str(scenario.get("weight") or 0))}</td>'
+                    f'<td class="td-t"><div><span class="tag-w">{_esc(scenario.get("label") or "")}</span> '
+                    f'<span class="sub">关注度 {_esc(str(scenario.get("weight") or 0))}%</span></div>'
+                    f'<div>触发：{_esc(scenario.get("trigger") or "")}</div>'
+                    f'<div class="ev">· 传导：{_esc(scenario.get("chain") or "")}</div>'
+                    f'<div class="ev">· 观察：{_esc(watch_text)}</div></td></tr>'
+                )
+            falsifiers = bigv.get("falsifiers") or []
+            if falsifiers:
+                rows.append(
+                    '<tr><td colspan="2" class="td-hdr"><span class="tag-d">证伪信号</span> '
+                    '<span class="sub">出现后应主动下调当前推演权重</span></td></tr>'
+                )
+                rows.append(
+                    '<tr><td class="td-n">!</td><td class="td-t">' + "".join(
+                        f'<div class="ev">· {_esc(item)}</div>' for item in falsifiers[:5]
+                    ) + '</td></tr>'
+                )
+
+        method_note = (
+            f'{_esc(bigv.get("disclaimer") or "")} '
+            f'{_esc(bigv.get("boundary") or "")} '
+            f'证据：{bigv.get("counts", {}).get("sources", 0)} 源 / '
+            f'{bigv.get("counts", {}).get("mentions", 0)} 条提及；'
+            f'快照日期 {_esc(bigv.get("as_of") or "")}。'
+        )
+        return (
+            f'<div class="card"><div class="hdr"><span class="tag">大 V 分析</span>'
+            f'<span class="sub">✦ {_esc(bigv.get("analyst") or "")} · '
+            f'{_esc(bigv.get("name") or "")}</span></div>'
+            f'<div class="txt">{_hl(_esc(bigv.get("headline") or ""))}</div>'
+            f'<table class="tbl">{"".join(rows)}</table>'
+            f'<div class="ftr">{method_note}</div></div>'
+        )
+
     def _news_card(per_source: int) -> str:
         """正文最后的「全网快讯」列表：按板块分组，每源最多 ``per_source`` 条，只显示标题、隐藏来源。
 
@@ -5844,13 +5967,15 @@ f'<div class="ftr">近30日只统计已核验发文日的全球政策，已观�
             + policy_card
             + policy_deep_cards
             + opportunities_card
+            + _render_big_v(deep_level)
+            + _news_card(per_source)
             + f'<div style="margin:8px 0 0;color:{muted};font-size:10px;text-align:center;">数据仅供参考，不构成投资建议</div>'
             + f'<div style="margin:6px 0 0;padding:6px 4px 0;border-top:1px solid {rule};color:{ink};font-size:10px;text-align:center;font-weight:700;">{_esc(author)}</div>'
             + '</div>'
         )
 
-    # 容量收敛顺序：先降「政策深度 / 政策研报」档位（派生内容），再逐级收敛快讯列表，
-    # 最后才整段省略快讯——「AI 每日总结 / 看盘 / 政策分析 / 板块机会」四个主卡片始终保留，
+    # 容量收敛顺序：先降「政策深度 / 政策研报 / 大 V 分析」的派生内容，再逐级收敛快讯列表，
+    # 最后才整段省略快讯——「AI 每日总结 / 看盘 / 政策分析 / 板块机会 / 大 V 分析」主卡片始终保留，
     # 保证任何账号口径（会员 10 万字 / 普通 2 万字）都能发得出去。
     cap = (NEWS_ITEMS_PER_SOURCE if max_items_per_source is None
            else min(max_items_per_source, NEWS_ITEMS_PER_SOURCE))
