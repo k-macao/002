@@ -41,6 +41,9 @@ def start_server(port, extra_env=None):
     env.pop("SENSITIVE_FORCE", None)
     env.pop("SENSITIVE_LEXICON", None)
     env["PORT"] = str(port)
+    # 测试不联网：单源超时压到 1 秒，「AI 独立开发雷达」的 19 个源并行失败即可返回。
+    env.setdefault("RADAR_TIMEOUT", "1")
+    env.setdefault("RADAR_BUDGET", "3")
     if extra_env:
         env.update(extra_env)
     proc = subprocess.Popen(
@@ -63,6 +66,9 @@ def start_mock(port, record_file, fail=False):
     """启动 mock_pushplus.py，返回 subprocess.Popen。"""
     env = dict(os.environ)
     env["PORT"] = str(port)
+    # 测试不联网：单源超时压到 1 秒，「AI 独立开发雷达」的 19 个源并行失败即可返回。
+    env.setdefault("RADAR_TIMEOUT", "1")
+    env.setdefault("RADAR_BUDGET", "3")
     env["RECORD_FILE"] = str(record_file)
     if fail:
         env["MOCK_FAIL"] = "1"
@@ -89,7 +95,8 @@ def request(base, method, path, body=None, headers=None):
         headers=headers or {},
     )
     try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        # 推送会连带渲染「AI 独立开发雷达」等栏目，冷启动第一次较慢，给 20 秒上限。
+        with urllib.request.urlopen(req, timeout=20) as resp:
             return resp.status, resp.read().decode("utf-8")
     except urllib.error.HTTPError as err:
         return err.code, err.read().decode("utf-8")
@@ -209,6 +216,25 @@ class ServerSmokeTest(unittest.TestCase):
         status_alias, raw_alias = request(self.base, "GET", "/api/bigv")
         self.assertEqual(status_alias, 200)
         self.assertEqual(json.loads(raw_alias)["column"], "大 V 分析")
+
+    def test_radar_endpoint_returns_modules_and_prompt(self):
+        # GET /api/radar：「AI 独立开发雷达」7 模块 + 心法；?format=prompt 给当日 AI 提示词。
+        # 测试环境把单源超时压到 1 秒：19 个源并行失败也必须正常返回结构，不能 500。
+        status, raw = request(self.base, "GET", "/api/radar")
+        self.assertEqual(status, 200)
+        data = json.loads(raw)
+        self.assertNotIn("error", data)
+        self.assertEqual(data["column"], "AI 独立开发雷达")
+        self.assertEqual([module["key"] for module in data["modules"]] if isinstance(data["modules"], list)
+                         else sorted(data["modules"]),
+                         sorted(["opportunities", "money_cases", "ideas", "growth",
+                                 "tools", "pitfalls", "data_signals"]))
+        self.assertIn("headline", data)
+        self.assertIn("disclaimer", data)
+        status_prompt, prompt = request(self.base, "GET", "/api/radar?format=prompt")
+        self.assertEqual(status_prompt, 200)
+        self.assertIn("独立开发者", prompt)
+        self.assertIn('"dailyWisdom"', prompt)
 
     def test_run_without_token_is_503_not_405(self):
         status, raw = request(

@@ -630,6 +630,91 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
   window._bigVReload=loadBigV;
 })();
 
+/* ---- AI 独立开发雷达（方法来自 github.com/susumr/radar-dashboard）
+   19 个独立开发 / 产品信号源 → 7 模块 + 心法。静态页保留当日快照，
+   server.py 可用时用 /api/radar 重算；某个模块当天没有素材就不渲染，不占位。 */
+(function(){
+  const wrap=document.getElementById('radarModules');
+  const summaryEl=document.getElementById('radarSummary');
+  const wisdomEl=document.getElementById('radarWisdom');
+  const pillEl=document.getElementById('radarPill');
+  if(!wrap) return;
+
+  const MODULES=[
+    {key:'opportunities',no:'1',label:'今日机会'},
+    {key:'money_cases',no:'2',label:'今日赚钱案例'},
+    {key:'ideas',no:'3',label:'今日产品灵感'},
+    {key:'growth',no:'4',label:'今日增长技巧'},
+    {key:'tools',no:'5',label:'今日工具'},
+    {key:'pitfalls',no:'6',label:'今日踩坑'},
+    {key:'data_signals',no:'7',label:'今日数据信号'}
+  ];
+  function esc(s){
+    return String(s==null?'':s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+  function safeHref(url){
+    try{
+      const u=new URL(String(url||''),location.href);
+      return (u.protocol==='http:'||u.protocol==='https:') ? esc(u.href) : '#';
+    }catch(e){ return '#'; }
+  }
+  function arr(v){ return Array.isArray(v)?v:[]; }
+
+  function itemHtml(module, entry){
+    if(module.key==='data_signals'){
+      return `<li class="radar-item"><b>${esc(entry.observation||'')}</b>`
+        + (entry.judgment?`<span class="radar-judgment">${esc(entry.judgment)}</span>`:'')
+        + '</li>';
+    }
+    const heat=entry.points?`，热度 ${esc(entry.points)}`:'';
+    return `<li class="radar-item"><a href="${safeHref(entry.url)}" target="_blank" rel="noopener noreferrer">`
+      + `${esc(entry.title||'')}</a><span class="radar-src">${esc(entry.source||'')}${heat}</span></li>`;
+  }
+
+  function render(data){
+    if(!data || data.error) return;
+    const modules=data.modules||{};
+    const html=MODULES.map(module=>{
+      const entries=arr(modules[module.key]);
+      if(!entries.length) return '';
+      return `<div class="radar-module"><h3><span class="radar-no">${module.no}</span>${esc(module.label)}</h3>`
+        + `<ul class="radar-items">${entries.map(entry=>itemHtml(module,entry)).join('')}</ul></div>`;
+    }).join('');
+    if(html) wrap.innerHTML=html;
+    if(summaryEl && data.headline){
+      summaryEl.innerHTML=`<mark>${esc(data.as_of||'')}</mark>${esc(data.headline)}`;
+    }
+    const wisdom=data.wisdom||{};
+    if(wisdomEl && wisdom.status==='live'){
+      wisdomEl.innerHTML=`<b>今日心法：${esc(wisdom.method||'')}</b>`
+        + `<p>${esc(wisdom.scenario||'')}</p>`
+        + `<ol>${arr(wisdom.steps).map(step=>`<li>${esc(step)}</li>`).join('')}</ol>`;
+    }
+    const counts=data.counts||{};
+    if(pillEl){
+      pillEl.textContent=`${Number(counts.items||0)} 条信号、${Number(counts.sources_ok||0)}`
+        + `/${Number(counts.sources_total||0)} 源有数据、${Number(counts.modules_filled||0)} 个模块有料`;
+    }
+  }
+
+  async function load(){
+    if(typeof isGithubPages!=='undefined' && isGithubPages) return;
+    try{
+      const res=await fetch('api/radar');
+      if(!res.ok) return;
+      const data=await res.json();
+      if(data && !data.error) render(data);
+    }catch(e){ /* 静态托管 / 离线：保留页面里的当日快照 */ }
+  }
+  load();
+  if(typeof refreshBtn!=='undefined' && refreshBtn){
+    refreshBtn.addEventListener('click', load);
+  }
+  window._radarReload=load;
+})();
+
 /* ---- DeepSeek 全网搜索（2026-10-17 Search API）----
    表单走相对路径 api/search（浏览器不直连 api.deepseek.com，Key 只在服务端）。 */
 (function(){
