@@ -79,12 +79,12 @@
 
         <div class="deai-scoreboard">
           <div class="deai-score-cell">
-            <small>两面综合分（体检前）</small>
+            <small>综合分（体检前）</small>
             <b id="deaiScoreBefore">—</b>
           </div>
           <div class="deai-score-arrow" aria-hidden="true">→</div>
           <div class="deai-score-cell">
-            <small>两面综合分（改写后）</small>
+            <small>综合分（改写后）</small>
             <b id="deaiScoreAfter">—</b>
           </div>
           <div class="deai-score-delta" id="deaiScoreDelta">—</div>
@@ -118,6 +118,18 @@
           </ul>
         </div>
 
+        <div class="deai-diff-wrap">
+          <b>本轮改写对照（前 → 后）</b>
+          <ul class="deai-diffs" id="deaiDiffs">
+            <li>静态快照：运行 <code>server.py</code> 后这里列出本轮真正改掉的痕迹。</li>
+          </ul>
+        </div>
+
+        <div class="deai-diff-wrap" id="deaiBlockedWrap" hidden>
+          <b>没自动改的原因</b>
+          <ul class="deai-diffs" id="deaiBlocked"></ul>
+        </div>
+
         <details class="deai-details">
           <summary>保留项（waivers）与方法边界</summary>
           <ul class="deai-waivers" id="deaiWaivers">
@@ -140,12 +152,12 @@
 
         <div class="deai-scoreboard">
           <div class="deai-score-cell">
-            <small>两面综合分（体检前）</small>
+            <small>综合分（体检前）</small>
             <b id="hzScoreBefore">—</b>
           </div>
           <div class="deai-score-arrow" aria-hidden="true">→</div>
           <div class="deai-score-cell">
-            <small>两面综合分（清理后）</small>
+            <small>综合分（清理后）</small>
             <b id="hzScoreAfter">—</b>
           </div>
           <div class="deai-score-delta" id="hzScoreDelta">—</div>
@@ -179,6 +191,18 @@
           </ul>
         </div>
 
+        <div class="deai-diff-wrap">
+          <b>本轮清理对照（前 → 后）</b>
+          <ul class="deai-diffs" id="hzDiffs">
+            <li>静态快照：运行 <code>server.py</code> 后这里列出本轮真正删掉的套话。</li>
+          </ul>
+        </div>
+
+        <div class="deai-diff-wrap" id="hzBlockedWrap" hidden>
+          <b>没自动清的原因</b>
+          <ul class="deai-diffs" id="hzBlocked"></ul>
+        </div>
+
         <details class="deai-details">
           <summary>保留项（waivers）与方法边界</summary>
           <ul class="deai-waivers" id="hzWaivers">
@@ -209,7 +233,7 @@
           <span class="meta-tag">数据完整度 100%</span>
           <span class="meta-tag neutral">五维 3 看多 · 2 中性</span>
           <span class="meta-tag">权益仓位 59%</span>
-          <span class="meta-tag neutral">采集 实测 19 · 代理 0 · 未取得 0</span>
+          <span class="meta-tag neutral">采集 实测 19、代理 0、未取得 0</span>
           <span>静态快照 2026-10-26（示例数据包）；服务运行时由 <code>/api/quant</code> 按当日数据重算</span>
         </div>
         <div class="quant-steps" id="quantTimeline">
@@ -224,7 +248,7 @@
             <div class="quant-dim-head"><span class="point-no">1</span><b>基本面量化</b><em class="neutral">中性</em></div>
             <p class="quant-dim-focus">业绩驱动方向、估值修复空间</p>
             <ul>
-              <li><span>业绩披露 / 预告</span><b>10 家</b><small>超预期 5 · 符合 2 · 不及 3</small></li>
+              <li><span>业绩披露 / 预告</span><b>10 家</b><small>超预期 5、符合 2、不及 3</small></li>
               <li><span>净利润增速 &gt;50%</span><b>5 家</b><small>示例A、示例B、示例C</small></li>
               <li><span>净利润下滑 &gt;30%</span><b>3 家</b><small>示例J、示例I、示例H</small></li>
               <li><span>沪深300 PE / PB</span><b>13.42 / 1.48</b><small>58% 分位 · 合理</small></li>

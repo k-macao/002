@@ -719,6 +719,38 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
   });
   window.getDeaiMode=()=>modeSel ? modeSel.value : 'polish';
 
+
+  /* 改写对照：把「前 → 后」摊开给读者看；没自动改的逐条给出原因。
+     只做展示，不在前端补数：报告里没有的就写没有。 */
+  function renderDiffs(diffId, blockedId, blockedWrapId, reports){
+    const diffList=$(diffId), blockedList=$(blockedId), blockedWrap=$(blockedWrapId);
+    const diffs=[], blocked=[];
+    for(const r of reports){
+      if(!r) continue;
+      for(const d of (r.diffs||[])) diffs.push(d);
+      for(const b of (r.blocked||[])) blocked.push(b);
+    }
+    if(diffList){
+      diffList.innerHTML=diffs.length
+        ? diffs.slice(0,8).map(d=>
+            `<li><span class="diff-gate">gate ${esc(d.gate)}</span>`+
+            `<span><span class="diff-before">${esc(d.before)}</span>`+
+            `<span class="diff-arrow">→</span>`+
+            `<span class="diff-after">${esc(d.after)}</span></span></li>`).join('')
+        : '<li><span class="diff-gate">本轮无自动改写</span>'
+          + '<span class="diff-why">命中的都是需要结构 / 语义判断的项，见下方原因；这不是「没跑」。'+
+          '</span></li>';
+    }
+    if(blockedList && blockedWrap){
+      blockedWrap.hidden = !blocked.length;
+      blockedList.innerHTML=blocked.map(b=>
+        `<li><span class="diff-gate">gate ${esc(b.gate)} · ${esc(b.name||'')} ×${Number(b.count)||0}</span>`+
+        `<span class="diff-why">${esc(b.reason||'')}</span></li>`).join('');
+    }
+  }
+  // 文本层面板在另一个 IIFE 里，共用这一个渲染函数，别复制一份逻辑。
+  window.renderDeaiDiffs = renderDiffs;
+
   function renderFindings(report){
     const push=report.surfaces?.push||null, page=report.surfaces?.page||null;
     $('deaiScoreBefore').textContent=report.overall_score_before ?? '—';
@@ -737,7 +769,7 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
       $(scoreEl).textContent=`${r.score_before} → ${r.score_after}`;
       const a=r.after||{}, c=a.counts||{};
       $(stateEl).textContent=`${label}：${a.findings?.length||0} 条 gate 命中（自动可修 ${c.auto_fixable||0} / 需人工 ${c.manual||0}）；`+
-        `本次改写 ${r.fixes?.filter(f=>f.gate!=='fact-lock').length||0} 类痕迹。` +
+        `本次改写 ${r.fixed_count ?? r.fixes?.filter(f=>f.gate!=='fact-lock').length ?? 0} 处。` +
         (r.changed?'已生成改写预览。':'无需改写或已是 audit 结果。');
     }
 
@@ -762,6 +794,8 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
         `<span class="deai-finding-auto">${f.auto?'自动可修':'需人工判断'} · ${esc((f.fix||'').slice(0,54))}</span></li>`
       ).join('');
     }
+
+    renderDiffs('deaiDiffs', 'deaiBlocked', 'deaiBlockedWrap', [push,page]);
 
     const waivers=report.waivers||[];
     if(waivers.length){
@@ -826,7 +860,7 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
       $(scoreEl).textContent=`${r.score_before} → ${r.score_after}`;
       const a=r.after||{}, c=a.counts||{};
       $(stateEl).textContent=`${label}：${a.findings?.length||0} 类模式命中（可清理 ${c.auto_fixable||0} / 需语义判断 ${c.manual||0}）；`+
-        `本次清理 ${r.fixes?.filter(f=>f.gate!=='fact-lock').length||0} 类零信息套话。`;
+        `本次清理 ${r.fixed_count ?? r.fixes?.filter(f=>f.gate!=='fact-lock').length ?? 0} 处零信息套话。`;
     }
 
     const merged=[];
@@ -847,6 +881,8 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
         `<span class="deai-finding-auto">${f.auto?'可清理':'需语义判断'} · ${esc((f.fix||'').slice(0,50))}</span></li>`
       ).join('');
     }
+
+    if(window.renderDeaiDiffs) window.renderDeaiDiffs('hzDiffs','hzBlocked','hzBlockedWrap',[push,page]);
 
     const waivers=report.waivers||[];
     if(waivers.length){

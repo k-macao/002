@@ -119,6 +119,38 @@ class PolishTest(unittest.TestCase):
         for gid in ("54", "30a", "63", "67", "6a", "34", "10a", "38i", "26a"):
             self.assertIn(gid, gates, f"未修复 gate {gid}")
 
+    def test_score_reacts_to_how_much_got_fixed(self):
+        """修得越多分越高：旧惩罚公式在命中 ≥5 处后停止增长，改了 25 处也是 0 分差。"""
+        def fake(count):
+            html = ("<style>.a{color:#fff}</style>"
+                    + "".join(f'<span class="sub">A · B · C ·{i}</span>' for i in range(count)))
+            return html
+        small = hd.polish(fake(4))
+        large = hd.polish(fake(30))
+        self.assertGreater(small["score_after"], small["score_before"])
+        self.assertGreater(large["score_after"], large["score_before"])
+        # 「改得多」的样本在修完之后应当比「改得少」的样本分数更高（同样残留结构下）
+        self.assertLess(large["score_before"], small["score_before"])
+
+    def test_polish_exposes_before_after_diffs(self):
+        rep = hd.polish(SLOPPY_HTML)
+        self.assertTrue(rep["diffs"])
+        first = rep["diffs"][0]
+        self.assertIn("gate", first)
+        self.assertTrue(first["before"])
+        self.assertNotEqual(first["before"], first["after"])
+        self.assertGreater(rep["fixed_count"], 0)
+
+    def test_blocked_items_say_why_not_auto_fixed(self):
+        # 卡片套卡片（gate 4）是 auto=False 的结构问题：改写不了，但必须说清为什么。
+        nested = ('<style>.a{color:#111}</style><div class="card">'
+                  '<div class="card"><p>正文</p></div></div>')
+        rep = hd.polish(nested)
+        self.assertTrue(rep["blocked"])
+        gate4 = next(item for item in rep["blocked"] if item["gate"] == "4")
+        self.assertIn("信息架构", gate4["reason"])
+        self.assertNotIn("4", {f["gate"] for f in rep["fixes"]})
+
     def test_polish_is_fact_preserving(self):
         rep = hd.polish(SLOPPY_HTML)
         self.assertEqual(_facts(SLOPPY_HTML), _facts(rep["html"]))

@@ -49,11 +49,12 @@ from __future__ import annotations
 
 import json
 import os
+import math
 import re
 from datetime import datetime, timedelta, timezone
 
 ENGINE = "humanizer-zh-deai"
-VERSION = "1.0"
+VERSION = "1.1"
 
 SOURCE = {
     "projects": [
@@ -124,6 +125,25 @@ WAIVERS = [
 # tier: strong=单次命中即值得改 / medium=需聚簇 / weak=弱信号
 # auto: True=本模块能安全自动改写（仅限零信息纯套话删除）
 TIER_WEIGHT = {"strong": 6.0, "medium": 3.0, "weak": 1.0}
+
+# 「改不动」的原因：这些模式要读懂上下文才敢动，删错就改意思。
+MANUAL_WHY = {
+    "A1": "「不是…而是…」可能就在引用原话里，改写会篡改引文",
+    "B6": "三段式要逐项判断是否重复或空泛，自动删会误删独立信息",
+    "C12": "升华结尾偶尔承载作者判断，只在语义明确时人工删",
+    "D18": "行业术语（赋能 / 闭环）在金融语境里可能是本义，不能一律当套话",
+    "G32": "弱化语（可能 / 或）在预测句里是必要的谨慎表述",
+}
+_MANUAL_DEFAULT = "需要语义判断，静态规则不自动改写"
+
+
+def _penalty(tier: str, count: int) -> float:
+    """命中惩罚按 sqrt 连续增长、不封顶。
+
+    旧公式 ``1 + min(n-1, 4) * 0.15`` 在 n≥5 后停增，导致「删掉 20 处套话」
+    与「一处没删」同分；改写效果因此看不见。
+    """
+    return TIER_WEIGHT[tier] * (1 + 0.7 * math.sqrt(min(max(count, 1), 40)))
 
 
 def _rx(pattern: str) -> re.Pattern:
@@ -283,15 +303,17 @@ def text_nodes(html: str) -> list[str]:
     return [m.group(2) for m in _RE_TOKEN.finditer(html) if m.group(2)]
 
 
-def _rewrite_nodes(html: str) -> tuple[str, dict[str, int]]:
+def _rewrite_nodes(html: str) -> tuple[str, dict[str, int], list[dict]]:
     """只在「非受保护」的可见文本节点上应用 SAFE_RULES。
 
     用标签栈配平，遇到受保护容器（新闻标题 / 证据 / 链接 / style 等）整段跳过。
+    返回 (新 HTML, 各 gate 命中数, 改写样本)——样本用于「改写对照」，让删除可见。
     """
     out: list[str] = []
     stack: list[tuple[str, int]] = []
     protected_depth = 0
     applied: dict[str, int] = {}
+    samples: list[dict] = []
 
     for token in _RE_TOKEN.finditer(html):
         tag, text = token.group(1), token.group(2)
@@ -322,6 +344,11 @@ def _rewrite_nodes(html: str) -> tuple[str, dict[str, int]]:
         new_text = text
         node_applied: dict[str, int] = {}
         for gate, pattern, repl in SAFE_RULES:
+            for hit in re.finditer(pattern, new_text):
+                phrase = hit.group(0).strip()
+                if phrase and len(samples) < 8:
+                    samples.append({"gate": gate, "before": phrase[:72],
+                                    "after": "（删除套话，句子其余部分保留）"})
             new_text, n = re.subn(pattern, repl, new_text)
             if n:
                 node_applied[gate] = node_applied.get(gate, 0) + n
@@ -334,7 +361,7 @@ def _rewrite_nodes(html: str) -> tuple[str, dict[str, int]]:
             new_text = re.sub(r"^\s*[，,、；;]\s*", "", new_text)
         out.append(new_text)
 
-    return "".join(out), applied
+    return "".join(out), applied, samples
 
 
 # ── 事实保护签名 ───────────────────────────────────────────────────────────
@@ -389,7 +416,7 @@ def audit(html: str, surface: str = "push") -> dict:
         counts[f["tier"]] += 1
         counts["hits"] += f["count"]
         counts["auto_fixable" if f["auto"] else "manual"] += 1
-        penalties += TIER_WEIGHT[f["tier"]] * (1 + min(f["count"] - 1, 4) * 0.15)
+        penalties += _penalty(f["tier"], f["count"])
     score = max(0, min(100, round(100 - penalties)))
     strong = [f for f in findings if f["tier"] == "strong"]
     verdict = "needs_review" if strong else ("review" if findings else "clean")
@@ -416,7 +443,10 @@ def polish(html: str, surface: str = "push") -> dict:
     日期漂移都会触发整体回滚。
     """
     before = audit(html, surface)
-    new_html, applied = _rewrite_nodes(html)
+    result = _rewrite_nodes(html)
+    # 兼容：外部若替换成两元组实现（如测试桩），照旧处理。
+    new_html, applied = result[0], result[1]
+    diffs = result[2] if len(result) > 2 else []
     fixes = [{"gate": g, "note": PATTERN_BY_ID[g]["name"] + " → 删除零信息套话",
               "count": n, "surface": "text"} for g, n in sorted(applied.items())]
 
@@ -426,10 +456,16 @@ def polish(html: str, surface: str = "push") -> dict:
         new_html = html
 
     after = audit(new_html, surface)
+    blocked = [{
+        "gate": f["gate"], "name": f["name"], "count": f["count"], "tier": f["tier"],
+        "reason": MANUAL_WHY.get(f["gate"], _MANUAL_DEFAULT),
+    } for f in after["findings"] if not f["auto"]]
+    fixed_count = sum(f["count"] for f in fixes if f["gate"] != "fact-lock")
     return {
         "engine": ENGINE, "version": VERSION, "surface": surface,
         "checked_at": _now_cn(), "changed": new_html != html,
-        "html": new_html, "fixes": fixes, "before": before, "after": after,
+        "html": new_html, "fixes": fixes, "diffs": diffs, "blocked": blocked,
+        "fixed_count": fixed_count, "before": before, "after": after,
         "score_before": before["score"], "score_after": after["score"],
         "score_delta": after["score"] - before["score"],
         "verdict_before": before["verdict"], "verdict_after": after["verdict"],

@@ -37,12 +37,13 @@ linter（``sloplint.mjs``）。本模块把其中**可用正则静态判定**的
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from datetime import datetime, timedelta, timezone
 
 ENGINE = "hallmark-deai"
-VERSION = "1.0"
+VERSION = "1.1"
 
 SOURCE = {
     "project": "Nutlope/hallmark",
@@ -166,6 +167,27 @@ GATES = [
 GATE_BY_ID = {g["id"]: g for g in GATES}
 _TIER_WEIGHT = {"Floor": 6.0, "Reflex": 3.0, "Finish": 1.0}
 
+# 不可自动改写的 gate：改不动的原因是结构或语义判断，不是「懒得改」。
+MANUAL_WHY = {
+    "4": "卡片套卡片是本栏目「一屏一卡」的信息架构，拆层要重新设计版式，静态规则不动结构",
+    "19": "文案套话（排比 / 升华结尾）需要读懂上下文才敢删，删错就丢信息，交人工判断",
+    "3": "列阵 / 色条属于版式设计，正则改不动布局",
+    "9": "分节节奏要在真实渲染里比较，静态闸门没有依据",
+    "69": "同一数字复读涉及「哪个位置最重要」的编辑判断，自动删可能删错位置",
+    "F23": "破折号是正文标点，可能落在新闻标题或引用里，按事实保护不动",
+}
+_MANUAL_DEFAULT = "需要结构 / 语义判断或落在受保护正文里，静态规则不改"
+
+
+def _penalty(tier: str, count: int) -> float:
+    """命中惩罚：按 sqrt 增长，**不封顶**。
+
+    旧公式 ``1 + min(n-1, 4) * 0.15`` 在 n≥5 之后就不再增长，于是「修掉 25 处」
+    与「一处没修」得分完全一样（75 → 75），看上去像没生效。改成随命中数连续增长后，
+    修一处就掉一处分，改写效果才在分数上看得见。
+    """
+    return _TIER_WEIGHT[tier] * (1 + 0.7 * math.sqrt(min(max(count, 1), 40)))
+
 # ── 探测器 ─────────────────────────────────────────────────────────────────
 _RE_GRADIENT = re.compile(
     r"(?:linear|radial|conic)-gradient\([^)]*?(?:purple|violet|indigo|#6[0-9a-f]{5}|#8[0-9a-f]{5}|"
@@ -210,7 +232,10 @@ _RE_META_DOTS = re.compile(r"·|　·　")
 _RE_ARROW_GLUED = re.compile(r"[→➜»]\s*</(?:a|button)>")
 _RE_LABEL_SPAN = re.compile(
     r"(<span\b[^>]*" + _cls_containing(r"sub|tag|tag-w|tag-d|ai-pill|meta-tag|kicker|eyebrow")
-    + r"[^>]*>)([^<]*)(</span>)", re.I)
+    + r"[^>]*>)([^<]*)(</span>)|"
+    # 卡片里的 <small> 也是 UI 元信息（「超预期 5 · 符合 2 · 不及 3」这类），
+    # 与 tag/sub 同级处理；正文段落与数据表单元格仍然不碰。
+    r"(<small\b[^>]*>)([^<]*)(</small>)", re.I)
 _RE_NUMBER = re.compile(r"\d+(?:[.,:]\d+)*%?")
 _RE_URL = re.compile(r"https?://[^\s\"'<>]+")
 _RE_ANCHOR = re.compile(r"<a\b", re.I)
@@ -310,7 +335,7 @@ def audit(html: str, css: str = "", surface: str = "push") -> dict:
         counts[tier.lower()] += 1
         counts["hits"] += n
         counts["auto_fixable" if g["auto"] else "manual"] += 1
-        penalties += _TIER_WEIGHT[tier] * (1 + min(n - 1, 4) * 0.15)
+        penalties += _penalty(tier, n)
     score = max(0, min(100, round(100 - penalties)))
     floors = [f for f in findings if f["tier"] == "Floor"]
     verdict = "fail" if floors else ("reflex" if findings else "clean")
@@ -343,8 +368,14 @@ _REDUCE_RULE = "@media (prefers-reduced-motion: reduce){*{animation:none!importa
 
 
 def _fix_label_punctuation(match: re.Match) -> str:
-    """只改 UI 标签里的中点串联；正文、新闻标题、引用一律不碰。"""
-    open_tag, text, close_tag = match.group(1), match.group(2), match.group(3)
+    """只改 UI 标签里的中点串联；正文、新闻标题、引用一律不碰。
+
+    正则有两个分支（span 标签 / small 标签），命中哪支就用哪支的分组。
+    """
+    if match.group(1) is not None:
+        open_tag, text, close_tag = match.group(1), match.group(2), match.group(3)
+    else:
+        open_tag, text, close_tag = match.group(4), match.group(5), match.group(6)
     if len(_RE_META_DOTS.findall(text)) < 2:
         return match.group(0)
     sep = "；" if len(text) > 44 else "、"
@@ -356,16 +387,17 @@ _RE_CLASS_EL = re.compile(
     r"<(?P<tag>span|div|p)\b[^>]*" + _cls_containing(r"kicker|eyebrow") + r"[^>]*>", re.I)
 
 
-def _remove_inert_labels(markup: str) -> tuple[str, int]:
+def _remove_inert_labels(markup: str) -> tuple[str, list[str]]:
     """删除眉标 / kicker 元素（含嵌套标签），用标签栈配平，避免误删正文或留孤标签。
 
     Hallmark 54：这行小字删掉不丢事实。只匹配 class 含 kicker/eyebrow 的元素本身，
-    不动其它结构；嵌套的同名 / 异名标签用栈计数直到闭合。
+    不动其它结构；嵌套的同名 / 异名标签用栈计数直到闭合。返回 (新 HTML, 被删文本列表)。
     """
-    out, pos, removed = [], 0, 0
+    out, pos, removed = [], 0, []
     for m in _RE_CLASS_EL.finditer(markup):
         out.append(markup[pos:m.start()])
         tag = m.group("tag").lower()
+        start = m.end()
         depth = 1
         cursor = m.end()
         token = re.compile(r"<(/?)%s\b[^>]*>" % tag, re.I)
@@ -376,10 +408,15 @@ def _remove_inert_labels(markup: str) -> tuple[str, int]:
                 break
             depth += -1 if nxt.group(1) else 1
             cursor = nxt.end()
+        removed.append(_plain(markup[start:cursor]))
         pos = cursor
-        removed += 1
     out.append(markup[pos:])
     return "".join(out), removed
+
+
+def _plain(markup: str) -> str:
+    """去掉标签取可见文本，用于改写对照（前后片段）。"""
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]*>", "", markup or "")).strip()
 
 
 _RE_ROOT_BLOCK = re.compile(r":root\s*\{[^}]*\}", re.I | re.S)
@@ -407,7 +444,17 @@ def polish(html: str, css: str = "", surface: str = "push") -> dict:
     """
     before = audit(html, css, surface)
     fixes: list[dict] = []
+    diffs: list[dict] = []          # 改写对照：让「改了什么」肉眼可见
     new_html, new_css = html, css
+
+    def remember(gate, before_text, after_text):
+        if len(diffs) >= 8:
+            return
+        b = (before_text or "").strip()
+        a = (after_text or "").strip()
+        if not b or b == a:
+            return
+        diffs.append({"gate": gate, "before": b[:72], "after": a[:72]})
 
     def sub(pattern, repl, gate, note, target="html", flags=0, count_hint=None):
         nonlocal new_html, new_css
@@ -457,10 +504,15 @@ def polish(html: str, css: str = "", surface: str = "push") -> dict:
                       "count": 1, "surface": "html"})
 
     # ── HTML 层（只动装饰结构与 UI 标签） ──
-    new_html, n_eyebrow = _remove_inert_labels(new_html)
-    if n_eyebrow:
-        fixes.append({"gate": "54", "note": f"删除 inert 眉标 / kicker（{n_eyebrow} 处）",
-                      "count": n_eyebrow, "surface": "html"})
+    new_html, eyebrow_hits = _remove_inert_labels(new_html)
+    # 兼容旧签名：外部若替换成返回「数量」的实现（如测试桩），按数量处理。
+    eyebrow_texts = eyebrow_hits if isinstance(eyebrow_hits, list) else []
+    eyebrow_count = len(eyebrow_hits) if isinstance(eyebrow_hits, list) else int(eyebrow_hits or 0)
+    if eyebrow_count:
+        fixes.append({"gate": "54", "note": f"删除 inert 眉标 / kicker（{eyebrow_count} 处）",
+                      "count": eyebrow_count, "surface": "html"})
+        for text in eyebrow_texts:
+            remember("54", text, "（整行删除，不丢事实）")
     # 只删纯装饰符号；＋ / ↻ / ↗ / ☼ / ◐ / ▶ 是功能字符，见 WAIVERS。
     sub(r"[✦✧★☆◆◇]\s*", "", "30a", "删除装饰符号图标", "html", re.I)
     # 只删「空」的状态圆点元素（class 含 live-dot / status-dot / pixel-dot）；
@@ -485,6 +537,7 @@ def polish(html: str, css: str = "", surface: str = "push") -> dict:
         out = _fix_label_punctuation(m)
         if out != m.group(0):
             label_changed[0] += 1
+            remember("63", _plain(m.group(2) if m.group(2) is not None else m.group(5)), _plain(out))
         return out
 
     new_html = _RE_LABEL_SPAN.sub(_label_repl, new_html)
@@ -540,10 +593,17 @@ def polish(html: str, css: str = "", surface: str = "push") -> dict:
 
     after = audit(new_html, new_css, surface)
     changed = new_html != html or new_css != css
+    # 没自动改写的那几类，逐条说清为什么——「改不动」和「没检出」是两回事。
+    blocked = [{
+        "gate": f["gate"], "name": f["name"], "count": f["count"], "tier": f["tier"],
+        "reason": MANUAL_WHY.get(f["gate"], _MANUAL_DEFAULT),
+    } for f in after["findings"] if not f["auto"]]
+    fixed_count = sum(f["count"] for f in fixes if f["gate"] != "fact-lock")
     return {
         "engine": ENGINE, "version": VERSION, "surface": surface,
         "checked_at": _now_cn(), "changed": changed,
         "html": new_html, "css": new_css, "fixes": fixes,
+        "diffs": diffs, "blocked": blocked, "fixed_count": fixed_count,
         "before": before, "after": after,
         "score_before": before["score"], "score_after": after["score"],
         "score_delta": after["score"] - before["score"],
