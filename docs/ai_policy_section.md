@@ -1,8 +1,8 @@
-# AI 政策板块 · 政策分析 / 政策深度 / 政策研报
+# AI 政策板块 · 政策分析 / 政策深度
 
 > 生成依据：`sources.analyze_policy()` 对当日真实抓取标题的统计与推演
 > 状态：**已落地为产品板块**。推送简报与页面均按
-> `AI 每日总结 → AI 看盘 → AI 情绪热力图 → AI 政策分析 → AI 政策深度 → AI 政策研报 → AI 板块机会 → 大 V 分析 → 全网快讯`
+> `AI 每日总结 → AI 看盘 → AI 情绪热力图 → AI 政策分析 → AI 政策深度 → AI 板块机会 → 大 V 分析 → 全网快讯`
 > 的顺序排列，即「AI 看盘」紧跟「AI 每日总结」，「AI 政策分析」排在「AI 看盘」「AI 情绪热力图」之后。
 > 本文档是板块口径说明；页面为静态预览，实时结果见 `GET /api/policy` 与每日推送。
 
@@ -21,15 +21,13 @@
 | `sources.py` · `interpret_policy_modifiers()` | ③政策修饰词的经济学 + 法学双维解读（`_POLICY_MODIFIERS` 术语库） |
 | `sources.py` · `analyze_policy_sentiment()` | ④政策舆情情感打分（正向 / 中性 / 负向 + 官媒与市场的预期差） |
 | `sources.py` · `policy_chain_graph()` | ⑤政策传导图谱（政策主体 → 行业 → 产业链上下游节点） |
-| `sources.py` · `analyze_policy_reasoning()` / `policy_mindmap()` / `policy_research_note()` | ②四步分析师推理链 + 思维导图 + 结构化政策影响研报 |
-| `sources.py` · `lstm_policy_forecast()` | ⑥纯 Python 单层 LSTM + BPTT：政策后中长期走势节奏 |
-| `sources.py` · `prophet_policy_decompose()` | ⑦Prophet 式加性分解（趋势 + 季节 + 政策效应），剥离季节看政策窗口波动 |
-| `sources.py` · `get_policy_series()` / `set_policy_klines()` | 模型输入序列：推送路径缓存的真实日 K → 明确标注的合成演示序列兜底 |
-| `sources.py` · `build_html()` | 推送卡片：「AI 政策分析」+「AI 政策深度」+「AI 政策研报」，排在「AI 每日总结 → AI 看盘 → AI 情绪热力图」之后 |
-| `index.html` | 页面板块 `AI POLICY` / `AI POLICY DEEP` / `AI POLICY RESEARCH`（在 `AI WATCH` 看盘、`AI HEATMAP` 热力图之后） |
+| `sources.py` · `analyze_policy_reasoning()` | ②四步分析师推理链 |
+| `sources.py` · `lstm_policy_forecast()` / `prophet_policy_decompose()` / `get_policy_series()` | ⑥⑦ 时序模型，**仅供离线复用**：「AI 政策研报」栏目 2026-10-28 已下线，接口与推送都不再组装 |
+| `sources.py` · `build_html()` | 推送卡片：「AI 政策分析」+「AI 政策深度」，排在「AI 每日总结 → AI 看盘 → AI 情绪热力图」之后 |
+| `index.html` | 页面板块 `AI POLICY` / `AI POLICY DEEP`（在 `AI WATCH` 看盘、`AI HEATMAP` 热力图之后） |
 | `server.py` | `GET /api/policy`（`?deep=0` 不跑模型，仍返回近30日 `market_impact`） |
 | `test_sources.py` | `PolicyOfficialSourceTest` / `PolicySectionTest` / `PolicyMarketImpactTest` / `PolicyKnowledgeBaseTest` / `PolicyModifierTest` / `PolicySentimentTest` / `PolicyGraphTest` / `PolicyReasoningTest` / `PolicyModelTest` / `PolicyDeepWiringTest` |
-| `test_server.py` | `GET /api/policy` 响应结构 + 推送内容含政策三张卡片且位置在「AI 板块机会」之前 |
+| `test_server.py` | `GET /api/policy` 响应结构 + 推送内容含政策两张卡片且位置在「AI 板块机会」之前 |
 
 口径：政策维度标签见 `sources._POLICY_BUCKETS`；鹰鸽词库见 `_HAWKISH` / `_DOVISH`（否定前缀
 `_POLICY_NEG_NEAR` / `_POLICY_NEG_FAR` 会把立场票翻转，如「不再那么鸽派」计为鹰派）。
@@ -176,7 +174,7 @@
 
 ---
 
-## 二、模拟高级分析师的推理链（含研报与思维导图）
+## 二、模拟高级分析师的推理链
 
 四步拆解，每步都带证据（当日政策新闻 + 知识库历史政策），置信度由跨源命中数与样本量决定
 （≥6 源 & ≥10 条 & ≥6 条信号 = 高；≥3 条 = 中；否则低）：
@@ -186,13 +184,10 @@
 3. **资金流向**：政策面多空比分 + 资金偏向与回避方向 + 舆情窗口判断
 4. **受益板块**：政策净多维度 + 传导链上的行业节点 + 知识库条目的受益行业
 
-在此基础上自动生成：
-
-- **思维导图**（`policy_mindmap()`）：根节点 = 当日政策主线，8 个分支（宏观背景 / 政策工具与术语口径 /
-  行业限制 / 资金流向 / 受益与承压板块 / 产业链传导 / 政策窗口期 / 模型视角）。
-- **结构化政策影响研报**（`policy_research_note()`）：结论评级（政策利好 / 承压 / 中性）、
-  时间尺度（短期 1-4 周 · 中期 1-6 个月 · 长期 6-36 个月）、摘要、四步拆解、受益与承压方向、
-  **长远冲击评估**（每个受影响行业给出 结构性 vs 周期性、时间尺度与传导路径）、风险提示、政策窗口期。
+> **2026-10-28 起「AI 政策研报」栏目整栏下线**：思维导图（`policy_mindmap()`）、
+> 结构化政策影响研报（`policy_research_note()`）、LSTM × Prophet 时序模型三块都不再出现在
+> 推送与页面里，接口也不再返回 `mindmap` / `research` / `models`。相关函数作为离线分析工具保留，
+> 需要时显式调用 `analyze_policy_deep(..., include_models=True)`。
 
 ---
 
@@ -247,45 +242,28 @@
 
 ---
 
-## 六、LSTM 与 Prophet 式模型
+## 六、时序模型（栏目已下线，函数保留）
 
-两个模型都是**纯 Python 实现、零第三方依赖**，输入统一为 `{name, source, dates, closes}`：
+LSTM 与 Prophet 式分解是**纯 Python 实现、零第三方依赖**的历史能力，输入统一为
+`{name, source, dates, closes}`。2026-10-28 起「AI 政策研报」栏目整栏删除，
+这两个模型不再进入推送与页面，也不再随 `GET /api/policy` 返回，因此正常链路不再抓日 K。
 
-**LSTM（`lstm_policy_forecast()`）**——擅长捕捉时间序列的非线性规律与长期依赖，用于评估
-突发重大政策（降息、行业监管）后股价 / 汇率的中长期走势节奏：
+- `lstm_policy_forecast()`：单层 LSTM + BPTT，外推 10 个交易日的走势节奏与政策情景偏移。
+- `prophet_policy_decompose()`：趋势 + 周度季节 + 政策突变哑变量的岭回归分解，
+  输出政策效应（回归 / 事件研究两套口径）与窗口内波动倍数。
+- `get_policy_series()`：模型输入序列（真实日 K → 合成演示序列兜底），仅在显式调用时使用。
 
-- 日收盘价 → 日收益率 → z-score 归一化 → 长度 5 的滑窗；单层 LSTM（3 个隐藏单元，每单元独立的
-  输入 / 遗忘 / 输出门与候选记忆），BPTT 反向传播 + 梯度裁剪（阈值 5.0）+ SGD（学习率 0.08 线性衰减），
-  固定种子 `_POLICY_LSTM_SEED` 保证可复现；窗口数 > 20 时自动降到 30 轮，控制推送链路耗时。
-- 以最后一窗状态递归外推 10 个交易日，给出前 3 日 / 4-7 日 / 全程累计、拐点位置、动能衰减或延续。
-- **政策情景**：`shock` 为归一化的情景输入偏移（偏鸽 +、偏鹰 -，由鹰鸽取向 + 修饰词强度合成），
-  与基线路径之差即「政策情景相对基线的偏移」。输出统一标注为**模型情景、非预测**。
-- 样本不足 12 根日 K 时**不外推**，如实写出数据缺口。
-
-**Prophet 式加性分解（`prophet_policy_decompose()`）**——趋势 + 季节性 + 政策突变，
-用于分析政策出台后的中期波动并剥离季节因素：
-
-- 模型：`log(close) = 截距 + 线性趋势 + 二次趋势 + 变点铰链 + 周度傅里叶项 + 政策事件哑变量 + 残差`，
-  岭回归（正规方程 + 高斯消元）拟合；变点仅在样本 ≥30 根日 K 时启用（与趋势项高度共线）。
-- 输出：样本内趋势总量与当前斜率、周度季节振幅、去季节化残差波动、拟合 R²、
-  **政策效应**（回归口径 + 事件研究口径两套，永久性水平位移会被趋势 / 变点吸收，故同时给出
-  事件研究口径）、**政策窗口内 / 外波动倍数**、10 日去季节化外推路径。
-- 样本不足 10 根日 K 时不分解；样本窗口未覆盖知识库政策事件时明确标注「政策效应系数不可辨识」。
-
-**序列来源**：`collect_market_for_push()` 抓到的日 K 会缓存给模型层复用（`set_policy_klines()`）；
-无实时行情时回退**确定性合成序列**（`source="synthetic"`，趋势 + 周度季节 + 一个政策跳变日），
-页面与推送都会明确标注「合成演示序列（无实时行情）」，不与真实行情混淆。
-`POLICY_SERIES_LIVE=1` 可让 `get_policy_series()` 显式打一次行情接口。
+保留原因：历史回测与单元测试仍可用，需要复现旧研报时调用
+`analyze_policy_deep(..., include_models=True)` 即可拿回 `models` / `mindmap` / `research`。
 
 ---
 
 ## 七、数据来源与更新说明
 
-- 政策统计与深度层全部来自当日 `collect_all()` 的真实抓取标题（网络不可用时回退内置演示数据）；
-  行情序列来自主备行情接口，离线时用合成演示序列兜底。
+- 政策统计与深度层全部来自当日 `collect_all()` 的真实抓取标题（网络不可用时回退内置演示数据）。
 - 当日样本没有政策信号时，各层如实标注（「暂无政策面信号可统计」「知识库检索未启动」
-  「传导图谱未展开」「LSTM 不外推」「政策效应系数不可辨识」），不编造结论。
-- 推送容量分档：政策深度层按 `level 2 全量 → 1 精简（去掉思维导图与背景长文）→ 0 整段省略` 收敛，
+  「传导图谱未展开」），不编造结论。
+- 推送容量分档：政策深度层按 `level 2 全量 → 1 精简（去掉舆情节选 / 传导图谱全量 / 板块传导）→ 0 整段省略` 收敛，
   快讯列表在每档内先从每源 3 条收敛到 1 条，整段省略是最后一步；四个主分析栏目始终保留。
 - 数据仅供参考，不构成投资建议；政策细则以官方原文为准。
 

@@ -426,7 +426,7 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
 })();
 
 /* AI 政策深度：近 30 日全球政策发布对 A股 / 港股 / 美股的影响。
-   静态页是离线预览；server.py 可用时用 /api/policy?deep=0 覆盖，不跑 LSTM。 */
+   静态页是离线预览；server.py 可用时用 /api/policy?deep=0 覆盖，不跑深度层。 */
 (function(){
   const headlineEl=document.getElementById('policyDeepHeadline');
   const boardEl=document.getElementById('policyDeepBoard');
