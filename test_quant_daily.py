@@ -144,8 +144,14 @@ class DemoReportTest(unittest.TestCase):
 
     def test_north_bound_is_not_faked(self):
         md = self.report["markdown"]
-        self.assertIn("北向资金 数据暂缺", md)
+        # 北向是「已停止披露」= 不适用，不是「今天缺数据」；不过也别编数
+        self.assertIn("北向资金 不适用", md)
         self.assertIn("2024-08", md)
+        self.assertNotIn("北向资金净流入", md)
+        # 全景、五维两处口径必须一致：都是「不适用」，谁的 ⚠️ 都不该落在北向上
+        self.assertEqual(md.count("北向资金：不适用"), 1)
+        self.assertEqual(md.count("北向资金 不适用"), 1)
+        self.assertNotIn("北向资金 数据暂缺", md)
 
 
 class EmptyBundleTest(unittest.TestCase):
@@ -163,7 +169,10 @@ class EmptyBundleTest(unittest.TestCase):
     def test_all_dimensions_neutral_and_marked_missing(self):
         for dim in self.report["dimensions"]:
             self.assertEqual(dim["signal"], "中性")
-            self.assertTrue(all(m["status"] == "missing" for m in dim["metrics"]), dim["key"])
+            # 北向资金属于「不适用」（2024-08 起停止披露），其余指标必须是「未取得」
+            statuses = {m["status"] for m in dim["metrics"]}
+            self.assertTrue(statuses <= {"missing", "na"}, dim["key"])
+            self.assertIn("missing", statuses, dim["key"])
         self.assertEqual(self.report["strategy"]["position"]["value"], 50)
 
     def test_markdown_says_data_missing(self):
@@ -275,11 +284,22 @@ class DimensionTest(unittest.TestCase):
         self.assertIn("对冲成本", joined)
 
     def test_theme_strength_levels(self):
-        score, level = qd._theme_strength({"turnover_share": 8.4, "limit_up": 9, "days": 3})
+        score, level, partial = qd._theme_strength(
+            {"turnover_share": 8.4, "limit_up": 9, "days": 3})
         self.assertEqual(level, "强")
+        self.assertFalse(partial)
         self.assertGreaterEqual(score, qd.SCORING["theme_strong"])
         self.assertEqual(qd._theme_strength({"turnover_share": 1, "limit_up": 1,
                                              "days": 1})[1], "弱")
+
+    def test_theme_proxy_mode_uses_share_thresholds(self):
+        # 只有成交额占比时（实盘行业板块口径），按 5% / 3% 的代理阈值判强弱
+        score, level, partial = qd._theme_strength({"turnover_share": 6.2})
+        self.assertTrue(partial)
+        self.assertEqual(level, "强")
+        self.assertAlmostEqual(score, 6.2, places=2)
+        self.assertEqual(qd._theme_strength({"turnover_share": 3.6})[1], "中")
+        self.assertEqual(qd._theme_strength({"turnover_share": 1.2})[1], "弱")
 
     def test_style_signal_uses_risk_appetite(self):
         dim = qd._dim_beta(self.bundle)
@@ -351,6 +371,235 @@ class ArchiveAndCliTest(unittest.TestCase):
             self.assertEqual(len(payload["dimensions"]), 5)
         finally:
             os.unlink(path)
+
+
+
+# ---------------------------------------------------------------- 实盘装配测试
+def _candles(n=200, end="2026-10-26", close=4000.0, amount=5.0e11):
+    """造 n 个交易日的合成日 K（含收盘价 / 涨跌幅 / 成交额），用于离线跑实盘装配。"""
+    from datetime import datetime, timedelta
+    day = datetime.strptime(end, "%Y-%m-%d")
+    days = []
+    while len(days) < n:
+        if day.weekday() < 5:
+            days.append(day.strftime("%Y-%m-%d"))
+        day -= timedelta(days=1)
+    days.reverse()
+    out, price = {}, close
+    for index, date in enumerate(days):
+        pct = round(0.6 if index % 2 else -0.4, 2)
+        price = round(price * (1 + pct / 100), 2)
+        out[date] = {"date": date, "close": price, "pct": pct, "amount": amount,
+                     "change": round(price * pct / 100, 2), "source": "eastmoney"}
+    return out
+
+
+def _yield_candles(n=200, end="2026-10-26"):
+    """造收益率序列：围绕 1.82% 小幅波动（日变动 1bp 级），用于久期代理的债券序列。"""
+    from datetime import datetime, timedelta
+    day = datetime.strptime(end, "%Y-%m-%d")
+    days = []
+    while len(days) < n:
+        if day.weekday() < 5:
+            days.append(day.strftime("%Y-%m-%d"))
+        day -= timedelta(days=1)
+    days.reverse()
+    out = {}
+    for index, date in enumerate(days):
+        value = round(1.82 + ((index % 7) - 3) * 0.005, 3)   # ±1.5bp 内摆动
+        out[date] = {"date": date, "close": value, "pct": 0.0,
+                     "amount": None, "change": 0.0, "source": "eastmoney"}
+    return out
+
+
+FULL_FEEDS = {
+    "quotes": {"ok": True, "source": "eastmoney", "error": "", "breadth": {"up": 3300, "down": 1600, "flat": 100},
+               "quotes": {
+                   "沪深300": {"close": 4685.42, "pct": 0.62, "amount": 5120.0, "pe": 13.42, "pb": 1.48},
+                   "中证500": {"close": 7420.18, "pct": 1.14, "amount": 3180.5, "pe": 28.6, "pb": 1.92},
+                   "中证1000": {"close": 7855.63, "pct": 1.88, "amount": 2960.2, "pe": 38.75, "pb": 2.24},
+                   "上证指数": {"close": 3956.57, "pct": 1.13, "amount": 9000.0},
+                   "深证成指": {"close": 14048.88, "pct": 1.50, "amount": 12380.0},
+                   "国证价值": {"close": 8200.0, "pct": -0.18},
+                   "国证成长": {"close": 5600.0, "pct": 1.36},
+               }},
+    "industry": {"ok": True, "source": "eastmoney", "error": "",
+                 "proxy": "东方财富行业板块（申万一级代理）",
+                 "boards": [
+                     {"name": "半导体", "pct": 3.42, "amount": 1860.0, "main_net": 96.4,
+                      "up": 90, "down": 10, "turnover_share": 8.4},
+                     {"name": "通信", "pct": 2.86, "amount": 1120.0, "main_net": 58.2,
+                      "up": 70, "down": 12, "turnover_share": 5.2},
+                     {"name": "公用事业", "pct": -2.14, "amount": 240.0, "main_net": -17.4,
+                      "up": 5, "down": 60, "turnover_share": 1.1},
+                 ]},
+    "margin": {"ok": True, "source": "eastmoney", "error": "",
+               "current": 19860.0, "prev": 19810.0, "date": "2026-10-26"},
+    "billboard": {"ok": True, "source": "eastmoney", "error": "", "date": "2026-10-26",
+                  "note": "营业部席位按席位名归类，不代表特定游资身份",
+                  "inst": [{"name": "示例甲", "net": 4.82, "seat": "机构专用", "streak": None}],
+                  "hot": [{"name": "示例乙", "net": 2.86, "seat": "某营业部", "streak": None}]},
+    "limit_pools": {"ok": True, "source": "eastmoney", "error": "", "limit_up": 86, "limit_down": 4,
+                    "ladder": "示例甲 4 连板", "errors": [],
+                    "sectors_up": {"半导体": {"count": 9, "max_board": 3},
+                                   "通信": {"count": 5, "max_board": 2}},
+                    "sectors_down": {"公用事业": {"count": 2, "max_board": 1}}},
+    "cross_asset": {"ok": True, "source": "eastmoney", "error": "",
+                    "items": {"cgb10y": {"name": "中国10年期国债收益率", "value": 1.82, "prev": 1.85,
+                                         "code": "100.CN10Y"},
+                              "gold": {"name": "沪金主链", "value": 612.4, "prev": 610.0, "pct": 0.39,
+                                       "code": "113.au0"},
+                              "commodity": {"name": "南华商品指数", "value": 2310.0, "prev": 2290.0,
+                                            "pct": 0.86, "code": "100.NHCI"},
+                              "fx": {"name": "美元兑离岸人民币", "value": 7.1086, "prev": 7.117,
+                                     "pct": -0.12, "code": "133.USDCNH"}},
+                    "used": {}},
+}
+
+
+class LiveBundleTest(unittest.TestCase):
+    """实盘装配：喂入仿真采集结果 + 仿真日 K，检查五维是否真的有数、缺口是否说清楚。"""
+
+    def setUp(self):
+        self._fetch = qd._fetch_klines
+
+        def fake_klines(entries, lmt=45):
+            out = {}
+            for name, _secid in entries:
+                n = min(lmt, 200)
+                if name == "100.CN10Y":      # 国债：收益率序列，日变动约 1bp（不是价格）
+                    out[name] = _yield_candles(n)
+                else:
+                    out[name] = _candles(n=n)
+            return out
+        qd._fetch_klines = fake_klines
+        self.market = {"source": "snapshot", "date": "2026-10-26", "breadth": {}, "turnover": None}
+
+    def tearDown(self):
+        qd._fetch_klines = self._fetch
+
+    def _bundle(self, feeds):
+        return qd.live_bundle("2026-10-26", market=self.market, brief=None, feeds=feeds)
+
+    def test_full_feeds_fill_all_five_dimensions(self):
+        bundle = self._bundle(FULL_FEEDS)
+        self.assertEqual(len(bundle["indices"]), 3)
+        self.assertEqual(bundle["indices"][0]["pct"], 0.62)
+        self.assertIsNotNone(bundle["indices"][0]["pct_5d"])          # 近 5 日从日 K 算
+        self.assertEqual(bundle["valuation"]["沪深300"]["pe"], 13.42)
+        self.assertIsNotNone(bundle["valuation"]["沪深300"]["price_pct"])  # 价格分位代理
+        self.assertEqual(bundle["styles"]["大盘"], 0.62)
+        self.assertEqual(bundle["styles"]["成长"], 1.36)
+        self.assertEqual(bundle["breadth"]["up_count"], 3300)
+        self.assertEqual(bundle["breadth"]["limit_up"], 86)          # 涨停池
+        self.assertEqual(bundle["breadth"]["limit_down"], 4)
+        self.assertEqual(bundle["breadth"]["ladder"], "示例甲 4 连板")
+        # 成交额优先取日 K（当前值与环比同源），不走实时口径混算
+        self.assertEqual(bundle["turnover"]["amount"], 10000.0)
+        self.assertEqual(bundle["turnover"]["delta"], 0.0)
+        self.assertEqual(bundle["funds"]["margin"], 19860.0)
+        self.assertEqual(bundle["funds"]["lhb_inst"][0]["name"], "示例甲")
+        self.assertAlmostEqual(bundle["funds"]["main_net"], 137.2, places=1)  # 板块主力合计
+        self.assertAlmostEqual(bundle["macro"]["cgb10y"], 1.82, places=4)
+        self.assertEqual(bundle["macro"]["gold"]["name"], "沪金主链")
+        self.assertGreaterEqual(len(bundle["asset_history"]), 3)      # 风险平价有序列
+        self.assertIn("股票", bundle["asset_history"])
+        self.assertIn("债券", bundle["asset_history"])
+        self.assertTrue(any(f.get("proxy") for f in bundle["factors"]))
+        self.assertEqual(bundle["industry"][0]["limit_up"], 9)       # 行业涨停家数
+        self.assertEqual(bundle["themes"][0]["limit_up"], 9)
+        self.assertEqual(bundle["themes"][0]["days"], 3)
+
+    def test_full_feeds_report_is_not_empty(self):
+        bundle = self._bundle(FULL_FEEDS)
+        report = qd.analyze(bundle, as_of="2026-10-26")
+        self.assertGreaterEqual(report["quality"]["score"], 80)
+        for dim in report["dimensions"]:
+            filled = [m for m in dim["metrics"] if m["status"] != "missing"]
+            self.assertTrue(filled, f"{dim['key']} 一个指标都没填上")
+        md = report["markdown"]
+        self.assertIn("### 采集明细", md)
+        self.assertIn("✅ 实测", md)
+        self.assertIn("◐ 代理", md)
+        self.assertIn("⚠️ 未取得", md)                    # 未采集项照实列出
+        self.assertIn("价格代理", md)                     # 估值分位缺口用价格分位并标注
+        self.assertIn("上涨 3300 只", md)
+        self.assertIn("涨停 86 家", md)
+        self.assertIn("示例甲 4 连板", md)
+        self.assertNotIn("仅按成交额占比判强弱", md)   # 有涨停分布 → 完整口径，不降级为代理
+        self.assertIn("两融余额 19,860 亿", md)
+        self.assertNotIn("数据暂缺 ⚠️ | 数据暂缺 ⚠️ | 数据暂缺 ⚠️ | 数据暂缺 ⚠️", md)
+
+
+    def test_stale_snapshot_breadth_is_dropped(self):
+        # 快照日期 != 目标交易日：涨停家数、连板这些当天数据一律不能混进来
+        stale = {"source": "snapshot", "date": "2026-10-26", "turnover": None,
+                 "breadth": {"limit_up": 77, "limit_down": 3, "ladder": "深中华A 6 连板"}}
+        bundle = qd.live_bundle("2026-10-26", market=stale, feeds={})
+        self.assertNotIn("limit_up", bundle.get("breadth") or {})
+        self.assertTrue(any("不是当日实测接口数据" in n for n in bundle["notes"]))
+        self.assertNotIn("深中华A", qd.analyze(bundle, as_of="2026-10-26")["markdown"])
+
+    def test_snapshot_turnover_is_not_used(self):
+        # 内置快照即使把 date 改写成目标交易日，也不能当成当日成交额
+        market = {"source": "snapshot", "date": "2026-10-26",
+                  "turnover": {"amount": 21380.0, "delta": 1840.0, "unit": "亿"}}
+        bundle = qd.live_bundle("2026-10-26", market=market, feeds={})
+        # 只允许日 K 口径的成交额进来，快照里那个 21,380 亿不能用
+        self.assertNotEqual((bundle.get("turnover") or {}).get("amount"), 21380.0)
+
+    def test_turnover_falls_back_to_quotes_without_prev(self):
+        qd._fetch_klines = lambda entries, lmt=45: {}
+        bundle = self._bundle(FULL_FEEDS)
+        self.assertEqual(bundle["turnover"]["amount"], 21380.0)
+        self.assertIsNone(bundle["turnover"]["prev"])    # 口径不同，不造环比
+        self.assertIsNone(bundle["turnover"]["delta"])
+
+    def test_bond_series_is_guarded_against_non_yield_data(self):
+        # 「收益率」日变动 0.4pp 的序列显然是价格指数，不应用久期换算成 -260%/日
+        candles = _candles(n=60)
+        self.assertEqual(qd._bond_series(candles, "2026-10-26", 60, 6.5), [])
+        flat = {d: {**row, "close": 1.8 + (i % 3) * 0.005} for i, (d, row) in
+                enumerate(sorted(_candles(n=60).items()))}
+        series = qd._bond_series(flat, "2026-10-26", 60, 6.5)
+        self.assertTrue(series)
+        self.assertTrue(all(abs(value) <= 1 for value in series))
+
+    def test_provenance_marks_agent_only_fields(self):
+        bundle = self._bundle(FULL_FEEDS)
+        fields = {item["field"]: item for item in bundle["provenance"]}
+        self.assertEqual(fields["两融余额"]["status"], "live")
+        self.assertEqual(fields["行业板块"]["status"], "proxy")
+        self.assertEqual(fields["指增超额"]["status"], "missing")
+        self.assertIn("Agent 工具", fields["指增超额"]["source"])
+        self.assertEqual(fields["财报 / 业绩预告"]["status"], "missing")
+
+    def test_all_feeds_fail_stays_honest(self):
+        dead = {key: {"ok": False, "source": "x", "error": "blocked"} for key in
+                ("quotes", "industry", "margin", "billboard", "cross_asset")}
+        qd._fetch_klines = lambda entries, lmt=45: {}
+        bundle = self._bundle(dead)
+        report = qd.analyze(bundle, as_of="2026-10-26")
+        self.assertEqual(report["quality"]["score"], 0)
+        self.assertNotIn("indices", bundle)
+        self.assertNotIn("industry", bundle)
+        self.assertTrue(all(item["status"] == "missing" for item in
+                            bundle["provenance"] if item["field"] in
+                            ("指数行情", "行业板块", "两融余额", "龙虎榜", "10Y 国债收益率")))
+        self.assertIn("数据暂缺 ⚠️", report["markdown"])
+
+    def test_live_bundle_without_feeds_does_not_crash(self):
+        # 采集层整个抛异常时，live_bundle 仍要返回可分析的骨架
+        import quant_feeds
+        original = quant_feeds.collect
+        quant_feeds.collect = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("feed down"))
+        try:
+            bundle = qd.live_bundle("2026-10-26", market=self.market, brief=None)
+            self.assertEqual(bundle["as_of"], "2026-10-26")
+            self.assertIn("采集层异常", " ".join(bundle["notes"]))
+            self.assertTrue(bundle["provenance"])
+        finally:
+            quant_feeds.collect = original
 
 
 class HtmlSectionTest(unittest.TestCase):

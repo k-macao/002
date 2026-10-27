@@ -634,12 +634,15 @@
           <b>面向 AI Agent 的日频量化日报</b>：五步流程拆成 <b>41 个原子动作</b>，每个动作对应一次工具调用；
           A 股交易日 15:30 自动启动、16:00 前产出标准 Markdown 并按 <code>YYYYMMDD_量化交易日报.md</code> 归档，
           港股 / 美股按各自收盘时间平移。当日拿不到的指标一律写「数据暂缺」并标 ⚠️，不用前值或估计值顶替。
+          采集层（<code>quant_feeds.py</code>）对接东方财富行情 / 板块 / 两融 / 龙虎榜 / 涨跌停池 / 大类资产，
+          主源失败自动切腾讯行情；每个字段都标明「实测 / 代理 / 未取得」，代理项在日报里写清口径边界。
         </div>
         <p class="quant-summary" id="quantSummary"><mark>核心结论 · 2026-10-26</mark>2026-10-26，指数集体收涨，中证1000 +1.88% 领跑，五维：基本面中性·配置中性·阿尔法看多·贝塔看多·另类看多，权益仓位 59%（+1pct），风险 高1/中0</p>
         <div class="quant-meta" id="quantMeta">
           <span class="meta-tag">数据完整度 100%</span>
           <span class="meta-tag neutral">五维 3 看多 · 2 中性</span>
           <span class="meta-tag">权益仓位 59%</span>
+          <span class="meta-tag neutral">采集 实测 19 · 代理 0 · 未取得 0</span>
           <span>静态快照 2026-10-26（示例数据包）；服务运行时由 <code>/api/quant</code> 按当日数据重算</span>
         </div>
         <div class="quant-steps" id="quantTimeline">
@@ -713,6 +716,31 @@
           <tr><td>事件驱动</td><td>看多</td><td>关注池 半导体（半导体设备招标落地）、有色金属（黄金配置需求回升）、示例A（业绩 +132.0%）、示例B（业绩 +96.5%）<small>明日关注：半导体（半导体设备招标落地）、有色金属（黄金配置需求回升）、示例A（业绩 +132.0%）、示例B（业绩 +96.5%）、示例C（业绩 +78.2%）、算力（舆情 96）、半导体（舆情 91）。事件驱动仓位不超过总权益 15%，单标的不超过 5%，事件兑现即减。</small></td></tr>
           <tr><td>总仓位</td><td>中性</td><td>权益仓位中枢 <b>59%</b>（较上一日 +1pct）<small>五维加权 +0.29（基本面中性、配置中性、阿尔法看多、贝塔看多、另类看多）</small></td></tr>
         </table>
+        <details class="quant-actions" id="quantProvenance">
+          <summary>采集明细 · 实测 19 / 代理 0 / 未取得 0（点击展开）</summary>
+          <table class="quant-action-table">
+            <tr><th>字段</th><th>状态</th><th>来源 / 缺口说明</th></tr>
+            <tr><td>指数行情</td><td>✅ 实测</td><td>示例数据包（离线构造）<small>沪深300 / 中证500 / 中证1000</small></td></tr>
+            <tr><td>两市成交额</td><td>✅ 实测</td><td>示例数据包（离线构造）<small>含环比</small></td></tr>
+            <tr><td>市场宽度</td><td>✅ 实测</td><td>示例数据包（离线构造）<small>涨跌家数 + 涨停 / 跌停</small></td></tr>
+            <tr><td>指数 PE / PB</td><td>✅ 实测</td><td>示例数据包（离线构造）<small>含近 10 年分位（示例值）</small></td></tr>
+            <tr><td>风格剪刀差</td><td>✅ 实测</td><td>示例数据包（离线构造）</td></tr>
+            <tr><td>行业板块</td><td>✅ 实测</td><td>示例数据包（离线构造）<small>申万一级（示例值）</small></td></tr>
+            <tr><td>主题强度</td><td>✅ 实测</td><td>示例数据包（离线构造）<small>成交额占比 + 涨停家数 + 连板天数</small></td></tr>
+            <tr><td>主力资金</td><td>✅ 实测</td><td>示例数据包（离线构造）<small>全市场主力净额</small></td></tr>
+            <tr><td>两融余额</td><td>✅ 实测</td><td>示例数据包（离线构造）<small>含上一交易日</small></td></tr>
+            <tr><td>龙虎榜</td><td>✅ 实测</td><td>示例数据包（离线构造）<small>机构 / 营业部席位</small></td></tr>
+            <tr><td>大类资产</td><td>✅ 实测</td><td>示例数据包（离线构造）<small>10Y 国债 / 商品 / 黄金 / 汇率</small></td></tr>
+            <tr><td>资产收益序列</td><td>✅ 实测</td><td>示例数据包（离线构造）<small>喂风险平价</small></td></tr>
+            <tr><td>因子收益</td><td>✅ 实测</td><td>示例数据包（离线构造）<small>六因子（示例值）</small></td></tr>
+            <tr><td>财报 / 业绩预告</td><td>✅ 实测</td><td>示例数据包（离线构造）<small>10 家（示例值）</small></td></tr>
+            <tr><td>一致预期增速</td><td>✅ 实测</td><td>示例数据包（离线构造）<small>行业景气度环比（示例值）</small></td></tr>
+            <tr><td>指增超额</td><td>✅ 实测</td><td>示例数据包（离线构造）</td></tr>
+            <tr><td>IF / IC / IM 基差</td><td>✅ 实测</td><td>示例数据包（离线构造）</td></tr>
+            <tr><td>舆情热度</td><td>✅ 实测</td><td>示例数据包（离线构造）</td></tr>
+            <tr><td>政策事件</td><td>✅ 实测</td><td>示例数据包（离线构造）</td></tr>
+          </table>
+        </details>
         <ul class="quant-risks" id="quantRisks">
           <li><b>⚠️ 风格极端化（高）</b>小盘风格已连续 5 日占优</li>
         </ul>
