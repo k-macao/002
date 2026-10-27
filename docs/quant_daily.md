@@ -49,13 +49,34 @@
 |---|---|---|---|---|
 | `index_quotes()` | 三大指数涨跌幅、成交额、PE / PB、涨跌家数 | 东方财富 `push2/api/qt/stock/get` | `index_quotes_tencent()`（`qt.gtimg.cn`，万元 → 亿元） | 涨跌家数只累加上证 + 深证，避免把北交所 / 板块指数重复计入 |
 | `index_quotes_tencent()` | 同上（无涨跌家数） | 腾讯 `qt.gtimg.cn` | — | 47 个位置字段：3=价、32=涨跌幅、37=成交额(万元)、39=PE、46=PB |
-| `industry_boards()` | 行业板块涨跌幅、成交额、成交额占比、主力净流入 | 东方财富 `clist`（`fs=m:90+t:2+f:!50`） | — | 东财行业分类比申万一级更细 → 报告统一标「申万一级代理」 |
+| `industry_boards()` | 行业板块涨跌幅、成交额、成交额占比、主力净流入 | 东方财富 `clist`（`fs=m:90 t:2 f:!50`，**空格分隔**） | — | 东财行业分类比申万一级更细 → 报告统一标「申万一级代理」 |
 | `limit_pools(as_of)` | 涨停 / 跌停家数、板块分布、最高连板 | 东方财富 `push2ex` | — | 按 `hybk` 归板块；连板取 `lbc` 最大值 |
-| `margin_balances()` | 两融余额 + 上一交易日 | 东方财富数据中心 `RPTA_RZRQ_LSHJ` | 用一个交易日字段兜底 | 元 → 亿元 |
-| `billboard(as_of)` | 龙虎榜机构 / 营业部席位净买入 | 东方财富数据中心 `RPT_DAILYBILLBOARD_DETAILSNEW` | — | 同一标的多次上榜合并；只按席位名归类，**不臆断游资身份** |
-| `cross_asset()` | 10Y 国债收益率、商品、黄金、汇率 | 东方财富 | 多候选代码逐个尝试 | 候选：`100.CN10Y` / `101.GC00Y→113.au0` / `100.NHCI→101.CL00Y` / `133.USDCNH→100.USDCNYC`，用哪个写哪个 |
+| `margin_balances()` | 两融余额 + 上一交易日 | 东方财富数据中心 `RPTA_WEB_MARGIN_DAILYTRADE`（`FIN_BALANCE + LOAN_BALANCE`） | `RPTA_RZRQ_LSHJ`（`RZYE + RQYE`） | 元 → 亿元；命中哪份报告就记哪份 |
+| `billboard(as_of)` | 龙虎榜机构 / 营业部个股净买入 | 东方财富数据中心 `RPT_DAILYBILLBOARD_DETAILSNEW`（`BILLBOARD_NET_AMT`） | — | 同一标的多次上榜合并；该明细**无席位名**，按 `EXPLAIN`（「N家机构买入」）归类并写进 `basis`，**不臆断游资身份** |
+| `cross_asset()` | 10Y 国债收益率、商品、黄金、汇率 | 10Y 走中债登收益率曲线；其余东方财富 | 10Y 可退到 `100.CN10Y`；商品 / 黄金 / 汇率多候选逐个尝试 | 10Y 取「10年」列近两个交易日、环比用 **bp** 不用百分比（历史收益序列仍用东财日 K 代理，并标 `history_proxy`）；`101.GC00Y→113.au0` / `100.NHCI→101.CL00Y` / `133.USDCNH→120.USDCNYC`，用哪个写哪个；每类资产都有合理区间，越界视为码值不对 |
 
 `collect(as_of)` 并发跑全部采集（线程池），每个 job 单独 try：某个接口抛异常只让那一段变成 `{ok: false, error: ...}`，其余照常返回。`quotes` 失败会自动改打腾讯并保留 `primary_error`。
+
+### 3.1.1 接口契约是核对过的，不靠「看起来对」
+
+采集层的参数名与字段名逐条对齐 **akshare 1.20.1 / efinance 0.5.9 的现役实现**（同一批东财接口的第三方实现，可直接当契约的事实源），并做了自检入口：
+
+```bash
+python3 quant_feeds.py --check                 # 在有网的机器上逐项核对 7 个接口
+python3 quant_feeds.py --check --json          # 机器可读，含每项耗时 / 关键字段计数 / 错误原文
+```
+
+每项输出 `ok` / 耗时 / `quotes=7 · breadth=2` 这类字段计数 / 错误原文；全部通过退出码 0，否则 1。它**不写死期望值**——接口改字段时这里会直接显示「字段未识别」，而不是静默返回空。
+
+几个踩过的坑（改代码时别踩回去）：
+
+| 坑 | 现象 | 正解 |
+|---|---|---|
+| `fs` 用 `+` 拼接 | `urlencode` 把 `+` 编成 `%2B`，服务端收到字面加号 → **板块列表整块为空** | `fs = "m:90 t:2 f:!50"`（空格会被编成 `+`，正是服务端要的分隔符） |
+| 用 `>20000 就除以 100` 猜价格口径 | 道指 45682 被砍成 456.82 | 行情统一按 `fltt=2` 请求，返回即小数；只有明确「没带 fltt」的口径才传 `scaled=True` |
+| 两融只认一个 `reportName` | 报告名不存在时东财返回 `result: null`，两融恒缺 | `MARGIN_REPORTS` 顺序试两份报告，各自按自己的日期 / 余额字段取值 |
+| 在个股级龙虎榜里找席位名 | `RPT_DAILYBILLBOARD_DETAILSNEW` **没有** `OPERATEDEPT_NAME` → 机构净买恒空 | 用 `BILLBOARD_NET_AMT` + `EXPLAIN` 归类；有真席位名的明细表时优先按席位名 |
+| 把 `100.CN10Y` 当 10Y 国债 | 无第三方实现佐证，取不到就整条链缺（连带 ERP） | 主源中债登 `historyQuery`（`gjqx=0&qxId=ycqx`，取「10年」列），东财代码仅备选 |
 
 ### 3.2 字段级来源记账（`provenance`）
 
@@ -288,8 +309,9 @@ python3 quant_daily.py                             # 采集当日行情 + 当日
 python3 quant_daily.py --input bundle.json --json   # 用 Agent 数据包，输出结构化结果
 python3 quant_daily.py --date 2026-10-26 --no-archive
 python3 quant_daily.py --print-plan                 # 41 个原子动作的 JSON
-python3 test_quant_daily.py                        # 57 项回归（口径 / 风险 / 归档 / CLI / 采集拼装）
-python3 test_quant_feeds.py                        # 21 项回归（采集层解析 / 切源 / 异常隔离）
+python3 test_quant_daily.py                        # 59 项回归（口径 / 风险 / 归档 / CLI / 采集拼装）
+python3 test_quant_feeds.py                        # 33 项回归（采集层解析 / 契约 / 切源 / 自检 / 异常隔离）
+python3 quant_feeds.py --check                     # 联网自检 7 个采集接口
 ```
 
 退出码：0 正常；3 非交易日（按兜底规则跳过）；4 数据包不可解析。

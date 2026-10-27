@@ -574,6 +574,34 @@ class LiveBundleTest(unittest.TestCase):
         self.assertIn("Agent 工具", fields["指增超额"]["source"])
         self.assertEqual(fields["财报 / 业绩预告"]["status"], "missing")
 
+    def test_feed_notes_carry_basis_and_source(self):
+        """口径要能追溯到具体报告 / 数据源，而不是只写「东方财富」。"""
+        feeds = dict(FULL_FEEDS)
+        feeds["margin"] = {**feeds["margin"], "report": "RPTA_WEB_MARGIN_DAILYTRADE"}
+        feeds["billboard"] = {**feeds["billboard"],
+                              "basis": "按「解读」含「机构」归类（该明细无席位名）"}
+        feeds["cross_asset"] = {**feeds["cross_asset"], "items": {
+            **feeds["cross_asset"]["items"],
+            "cgb10y": {"name": "中国 10 年期国债收益率（中债登）", "value": 2.295,
+                       "prev": 2.312, "change_bp": -1.7, "pct": None,
+                       "date": "2026-10-24", "source": "chinabond",
+                       "code": "100.CN10Y", "history_proxy": True},
+        }}
+        fields = {item["field"]: item for item in self._bundle(feeds)["provenance"]}
+        self.assertIn("RPTA_WEB_MARGIN_DAILYTRADE", fields["两融余额"]["detail"])
+        # 个股级明细没有席位名 → 归类是代理口径，且必须写明
+        self.assertEqual(fields["龙虎榜"]["status"], "proxy")
+        self.assertIn("口径：", fields["龙虎榜"]["detail"])
+        self.assertEqual(fields["10Y 国债收益率"]["source"], "中债登收益率曲线")
+        self.assertIn("-1.7bp", fields["10Y 国债收益率"]["detail"])
+        self.assertIn("代理", fields["10Y 国债收益率"]["detail"])
+
+    def test_seat_level_billboard_is_not_marked_proxy(self):
+        feeds = dict(FULL_FEEDS)
+        feeds["billboard"] = {**feeds["billboard"], "basis": "按席位名归类"}
+        fields = {item["field"]: item for item in self._bundle(feeds)["provenance"]}
+        self.assertEqual(fields["龙虎榜"]["status"], "live")
+
     def test_all_feeds_fail_stays_honest(self):
         dead = {key: {"ok": False, "source": "x", "error": "blocked"} for key in
                 ("quotes", "industry", "margin", "billboard", "cross_asset")}
