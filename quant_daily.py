@@ -980,7 +980,8 @@ def live_bundle(as_of=None, market=None, brief=None, feeds: dict | None = None) 
         funds["margin_prev"] = margin.get("prev")
         note("两融余额", "live", "东方财富数据中心",
              f"{margin.get('date') or ''} 两融 {margin['current']:,.0f} 亿"
-             + (f"，上一交易日 {margin['prev']:,.0f} 亿" if margin.get("prev") else ""))
+             + (f"，上一交易日 {margin['prev']:,.0f} 亿" if margin.get("prev") else "")
+             + (f"（{margin['report']}）" if margin.get("report") else ""))
     else:
         note("两融余额", "missing", "东方财富数据中心", margin.get("error") or "未返回")
     billboard = (feeds or {}).get("billboard") or {}
@@ -990,8 +991,12 @@ def live_bundle(as_of=None, market=None, brief=None, feeds: dict | None = None) 
         funds["lhb_hot"] = [{"name": i["name"], "net": i["net"], "streak": i.get("streak"),
                              "seat": i.get("seat")} for i in (billboard.get("hot") or [])[:5]]
         if funds.get("lhb_inst") or funds.get("lhb_hot"):
-            note("龙虎榜", "live", "东方财富数据中心",
-                 (billboard.get("note") or "") + f"（{billboard.get('date') or ''}）")
+            basis = f"口径：{billboard['basis']}" if billboard.get("basis") else ""
+            dated = f"（{billboard['date']}）" if billboard.get("date") else ""
+            detail = "；".join(filter(None, [basis, billboard.get("note")])) + dated
+            note("龙虎榜",
+                 "live" if str(billboard.get("basis", "")).startswith("按席位名") else "proxy",
+                 "东方财富数据中心", detail)
     else:
         note("龙虎榜", "missing", "东方财富数据中心", billboard.get("error") or "未返回")
     if not any(funds.get(key) for key in ("margin", "main_net", "lhb_inst", "lhb_hot")):
@@ -1006,7 +1011,17 @@ def live_bundle(as_of=None, market=None, brief=None, feeds: dict | None = None) 
         macro["cgb10y"] = items["cgb10y"].get("value")
         macro["cgb10y_prev"] = items["cgb10y"].get("prev")
         codes_for_history["cgb10y"] = items["cgb10y"].get("code")
-        note("10Y 国债收益率", "live", items["cgb10y"].get("name") or "东方财富")
+        ten_year = items["cgb10y"]
+        change = ten_year.get("change_bp")
+        detail = "，".join(filter(None, [
+            f"{ten_year['value']:.3f}%" if ten_year.get("value") is not None else "",
+            f"环比 {change:+.1f}bp" if change is not None else "",
+            ten_year.get("date") or "",
+            "历史收益序列用东财日 K 代理" if ten_year.get("history_proxy") else "",
+        ]))
+        note("10Y 国债收益率", "live",
+             "中债登收益率曲线" if ten_year.get("source") == "chinabond" else "东方财富",
+             detail)
     else:
         note("10Y 国债收益率", "missing", "东方财富", cross.get("error") or "未返回")
     for key, label in (("commodity", "商品"), ("gold", "黄金")):
