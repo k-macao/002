@@ -5179,7 +5179,8 @@ def build_html(
     正文以分析栏目为主（AI 每日总结 → AI 看盘 → AI 情绪热力图 → AI 政策分析 → AI 政策深度 → AI 政策研报 → AI 板块机会 → 大 V 分析），
     「AI 看盘」紧跟「AI 每日总结」之后，让最新的 A 股 / 港股 / 美股行情在开篇就能看到；
     不展示监测平台清单、时间核对或推送协议说明。
-    **「AI 量化日报」卡片**排在「大 V 分析」之后、「全网快讯」之前（见 :func:`_quant_report`）：
+    **「AI 量化日报」卡片放正文最开头**（紧随刊头，其它栏目都在它之后；见 :func:`_quant_report`）：
+    量化信号是决策入口——先给权益仓位与五维结论，再往下看叙事型栏目；
     五维信号 + 权益仓位中枢 + 风险摘要；``quant`` 参数可注入已算好的报表，字符额度极紧时整段省略。
     **「全网快讯」列表默认已隐藏**（``NEWS_CARD_ENABLED = False``，2026-10-27 起）：卡片逻辑保留，
     打开开关后仍按下面的口径输出；隐藏期间原始快讯照常抓取，供各分析栏目统计信号。
@@ -5996,14 +5997,15 @@ f'<div class="ftr">近30日只统计已核验发文日的全球政策，已观�
             f'<div style="color:{ink};font-size:20px;font-weight:800;">章鱼 AI·全景分析（对冲组合002）</div>'
             f'<div style="color:{muted};font-size:11px;margin-top:4px;">对冲组合量化策略 · 全网 AI 调研境内外数据，由多个大模型混合部署。</div>'
             f'</div>{mtx_html}</div></div>'
-            f'<div class="card"><div class="hdr"><span class="tag">AI 每日总结</span></div><div class="txt">{headline}</div>{points_html}</div>'
+            # 「AI 量化日报」放最开头：量化信号是决策入口，先给仓位与五维结论，再往下看叙事型栏目。
+            + _render_quant(deep_level)
+            + f'<div class="card"><div class="hdr"><span class="tag">AI 每日总结</span></div><div class="txt">{headline}</div>{points_html}</div>'
             + kanpan_card
             + heatmap_card
             + policy_card
             + policy_deep_cards
             + opportunities_card
             + _render_big_v(deep_level)
-            + _render_quant(deep_level)
             + _news_card(per_source)
             + f'<div style="margin:8px 0 0;color:{muted};font-size:10px;text-align:center;">数据仅供参考，不构成投资建议</div>'
             + f'<div style="margin:6px 0 0;padding:6px 4px 0;border-top:1px solid {rule};color:{ink};font-size:10px;text-align:center;font-weight:700;">{_esc(author)}</div>'

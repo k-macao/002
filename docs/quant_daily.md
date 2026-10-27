@@ -258,7 +258,7 @@
 | 标准日报 | `reports/YYYYMMDD_量化交易日报.md` | 市场全景 + 数据体检 + 五维 + 策略 + 风险 + 数据源 |
 | 100 字摘要 | 报告 `summary` 字段 / 文档顶部 | 超长自动裁剪，数字优先保留 |
 | 结构化接口 | `GET /api/quant` | `?demo=1` 示例数据、`?date=YYYY-MM-DD` 指定交易日、`?format=markdown` 直接拿 Markdown；JSON 里带 `provenance`（逐字段来源）与 `provenance_stats`（实测 / 代理 / 未取得计数） |
-| 推送卡片 | `sources.build_html()` | 排在「大 V 分析」之后、「全网快讯」之前；字符额度极紧时整段省略 |
+| 推送卡片 | `sources.build_html()` | **放正文最开头**（紧随刊头，其它栏目都在它之后）；字符额度极紧时整段省略 |
 | 页面栏目 | `index.html` 的「AI 量化日报」 | 静态快照 + `/api/quant` 覆盖，含「采集明细」逐字段表与 41 个动作的映射表；实时完整度 < 40% 时保留快照并标明「实时采集受限」，不把缺数渲染成当日结论 |
 | 定时任务 | `.github/workflows/quant-daily.yml` | 交易日 15:35（07:35 UTC）跑一次，产出 Markdown 工件并写 Step Summary |
 
