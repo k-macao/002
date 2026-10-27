@@ -1465,3 +1465,6 @@ footer strong { display: block; color: var(--ink); text-align: center; font-size
 .deai-diffs .diff-after { color: var(--ink); font-weight: 700; }
 .deai-diffs .diff-arrow { color: var(--ink-soft); margin: 0 4px; }
 .deai-diffs .diff-why { color: var(--ink-soft); }
+
+/* 说明 / 注解 / 解析 / 提醒类文字：一律不展示（规则见 meta_text.py、页内标记见 index.html） */
+[data-meta] { display: none !important; }

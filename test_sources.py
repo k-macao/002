@@ -164,11 +164,11 @@ class NewsCardHiddenTest(unittest.TestCase):
         out = sources.build_html(brief)
         self.assertNotIn("全网快讯", out)
         self.assertNotIn("每源精选", out)
-        # 该在的还在：分析栏目、免责声明、落款都不动。
+        # 该在的还在：分析栏目与落款不动；说明 / 免责类文字按需求整段隐藏。
         self.assertIn("AI 每日总结", out)
         self.assertIn("AI 看盘", out)
-        self.assertIn("不构成投资建议", out)
         self.assertIn("作者：章鱼 ai", out)
+        self.assertNotIn("不构成投资建议", out)
 
     def test_hidden_card_does_not_drop_collected_news(self):
         # 隐藏的是卡片，不是数据：原始快讯仍参与信号统计（这里是多空 / 板块统计）。
@@ -597,7 +597,9 @@ class QuantDailyWiringTest(_NewsCardOn, unittest.TestCase):
         out = sources.build_html(self._brief())
         self.assertIn('<span class="tag">AI 量化日报</span>', out)
         self.assertIn("权益仓位中枢", out)
-        self.assertIn("数据完整度", out)
+        # 状态类文字（数据完整度 / 未取得 / 数据暂缺）同样不展示
+        self.assertNotIn("数据完整度", out)
+        self.assertNotIn("数据暂缺", out)
         self.assertLess(out.index('<span class="tag">AI 量化日报</span>'),
                         out.index('<span class="tag">全网快讯</span>'))
 
@@ -1459,13 +1461,16 @@ class BuildHtmlTest(_NewsCardOn, unittest.TestCase):
             us_review=sources.analyze_us(market=sources._US_SNAPSHOT),
         )
 
-    def test_build_html_omits_monitoring_list_and_keeps_disclaimer(self):
+    def test_build_html_omits_monitoring_list_and_meta_text(self):
         brief = {name: sources._demo_items(name)[:2] for name in sources.SOURCES}
         out = sources.build_html(brief, **self._kanpan())
         # 04「监测平台列表与雷达矩阵」不再作为原始来源卡片输出。
         self.assertNotIn("覆盖 18 个数据源", out)
         self.assertNotIn("金十数据 第", out)
-        self.assertIn("不构成投资建议", out)
+        # 说明书 / 免责声明 / 口径行按需求整段隐藏，落款保留。
+        self.assertNotIn("不构成投资建议", out)
+        self.assertNotIn("采集口径", out)
+        self.assertIn("作者：章鱼 ai", out)
 
     def test_build_html_renders_four_viewpoints(self):
         brief = {name: sources._demo_items(name)[:2] for name in sources.SOURCES}
@@ -1561,7 +1566,7 @@ class BuildHtmlTest(_NewsCardOn, unittest.TestCase):
             self.assertIn(kept, out)
         for dropped in ("快讯标题第 3 条", "快讯标题第 7 条"):
             self.assertNotIn(dropped, out)
-        self.assertIn("不构成投资建议", out)
+        self.assertIn("作者：章鱼 ai", out)
 
     def test_build_html_news_list_is_last_and_hides_sources(self):
         # 「全网快讯」列在正文最后（免责声明与作者署名之前），且整段不出现任何数据源名称。
@@ -1570,9 +1575,8 @@ class BuildHtmlTest(_NewsCardOn, unittest.TestCase):
                         for i in range(5)] for si, name in enumerate(sources.SOURCES)}
         out = sources.build_html(brief, **self._kanpan())
         self.assertIn("全网快讯", out)
-        # 位置：AI 看盘之后、免责声明与作者署名之前。
+        # 位置：AI 看盘之后、作者署名之前（免责声明已按需求隐藏）。
         self.assertLess(out.index("AI 看盘"), out.index("全网快讯"))
-        self.assertLess(out.index("全网快讯"), out.index("不构成投资建议"))
         self.assertLess(out.index("全网快讯"), out.index("作者：章鱼 ai"))
         card = out[out.index("全网快讯"):]
         for name in sources.SOURCES:
@@ -1735,6 +1739,62 @@ class BuildHtmlTest(_NewsCardOn, unittest.TestCase):
             self.assertIn("AI 政策分析", out)
             self.assertIn("AI 看盘", out)
             self.assertIn("作者：章鱼 ai", out)
+
+
+class MetaTextHiddenTest(_NewsCardOn, unittest.TestCase):
+    """说明 / 注解 / 解析 / 提醒类文字：推送正文里一句都不留，数据一个字不少。"""
+
+    def _brief(self):
+        return {name: sources._demo_items(name)[:3] for name in sources.SOURCES}
+
+    def _kanpan(self):
+        return dict(
+            review=sources.analyze_ashare(market=sources._ASHARE_SNAPSHOT),
+            hk_review=sources.analyze_hk(market=sources._HK_SNAPSHOT),
+            us_review=sources.analyze_us(market=sources._US_SNAPSHOT),
+        )
+
+    def test_no_meta_phrases_left(self):
+        out = sources.build_html(self._brief(), **self._kanpan())
+        for phrase in ("映射口径", "采集口径", "统计口径", "不构成投资建议", "仅供参考",
+                       "不作为投资依据",
+                       "线索列表不展示", "完整数据", "实时结果见", "数据完整度",
+                       "数据暂缺", "未取得", "统计信号", "启发式"):
+            self.assertNotIn(phrase, out, f"推送里还有说明类文字：{phrase}")
+
+    def test_data_survives(self):
+        out = sources.build_html(self._brief(), **self._kanpan())
+        # 指数点位、涨跌幅、涨停家数、五维结论与仓位都必须原样在
+        for fact in ("3956.57", "+1.13%", "涨停 77 家", "权益仓位", "AI 每日总结"):
+            self.assertIn(fact, out)
+
+    def test_numbers_are_only_removed_never_invented(self):
+        import meta_text
+        brief = self._brief()
+        sources.META_TEXT_ENABLED = False
+        try:
+            raw = sources.build_html(brief, **self._kanpan())
+        finally:
+            sources.META_TEXT_ENABLED = True
+        clean = sources.build_html(brief, **self._kanpan())
+        self.assertLess(len(clean), len(raw))
+        ok, why = meta_text.facts_preserved(raw, clean)
+        self.assertTrue(ok, why)
+
+    def test_switch_restores_original_text(self):
+        brief = self._brief()
+        sources.META_TEXT_ENABLED = False
+        try:
+            raw = sources.build_html(brief, **self._kanpan())
+        finally:
+            sources.META_TEXT_ENABLED = True
+        self.assertIn("不构成投资建议", raw)
+
+    def test_removed_fragments_are_recorded(self):
+        sources.META_TEXT_HIDDEN.clear()
+        sources.build_html(self._brief(), **self._kanpan())
+        self.assertTrue(sources.META_TEXT_HIDDEN)
+        self.assertTrue(all(isinstance(item, str) for item in sources.META_TEXT_HIDDEN))
 
 
 class AshareReviewTest(unittest.TestCase):

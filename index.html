@@ -138,7 +138,7 @@
           <p class="deai-boundary" id="deaiBoundary">分数是启发式体检分，不是 AIGC 检测概率；render/judge 类 gate 需浏览器与人眼判定，本闸门不假装有结论。</p>
         </details>
 
-        <div class="insight-foot" id="deaiFoot"><span>规则来源：Nutlope/hallmark（MIT）· 本仓库为可静态判定的 M 类 gate 子集移植，零第三方依赖、可离线运行。静态快照 2026-10-27；实时报告见 <code>/api/hallmark</code>。</span></div>
+        <div class="insight-foot" id="deaiFoot" data-meta="1"><span>规则来源：Nutlope/hallmark（MIT）· 本仓库为可静态判定的 M 类 gate 子集移植，零第三方依赖、可离线运行。静态快照 2026-10-27；实时报告见 <code>/api/hallmark</code>。</span></div>
       </article>
     </section>
 
@@ -211,17 +211,17 @@
           <p class="deai-boundary" id="hzBoundary">需要语义判断的模式（假对比、三段式、意义拔高、模糊归因）只检测并报告，不做正则改写；分数是启发式体检分，不是 AI 生成概率。</p>
         </details>
 
-        <div class="insight-foot" id="hzFoot"><span>规则来源：op7418/Humanizer-zh 等 MIT 项目（Wikipedia Signs of AI writing）· 明确排除 MIT + Non-Commercial 的 swaylq/humanize-chinese，不引入其代码或词表。零第三方依赖、可离线运行。静态快照 2026-10-27；实时报告见 <code>/api/humanizer</code>。</span></div>
+        <div class="insight-foot" id="hzFoot" data-meta="1"><span>规则来源：op7418/Humanizer-zh 等 MIT 项目（Wikipedia Signs of AI writing）· 明确排除 MIT + Non-Commercial 的 swaylq/humanize-chinese，不引入其代码或词表。零第三方依赖、可离线运行。静态快照 2026-10-27；实时报告见 <code>/api/humanizer</code>。</span></div>
       </article>
     </section>
 
     <section class="pixel-section" id="quantDailySection" data-column="量化日报">
       <div class="pixel-section-head">
         <div><h2>AI 量化日报</h2></div>
-        <span class="ai-pill" id="quantPill">15:30 采集 · 16:00 交付</span>
+        <span class="ai-pill" id="quantPill" data-meta="1">15:30 采集 · 16:00 交付</span>
       </div>
       <article class="insight-card quant-card">
-        <div class="quant-notice">
+        <div class="quant-notice" data-meta="1">
           <b>面向 AI Agent 的日频量化日报</b>：五步流程拆成 <b>41 个原子动作</b>，每个动作对应一次工具调用；
           A 股交易日 15:30 自动启动、16:00 前产出标准 Markdown 并按 <code>YYYYMMDD_量化交易日报.md</code> 归档，
           港股 / 美股按各自收盘时间平移。当日拿不到的指标一律写「数据暂缺」并标 ⚠️，不用前值或估计值顶替。
@@ -229,11 +229,11 @@
           主源失败自动切腾讯行情；每个字段都标明「实测 / 代理 / 未取得」，代理项在日报里写清口径边界。
         </div>
         <p class="quant-summary" id="quantSummary"><mark>核心结论 · 2026-10-26</mark>2026-10-26，指数集体收涨，中证1000 +1.88% 领跑，五维：基本面中性·配置中性·阿尔法看多·贝塔看多·另类看多，权益仓位 59%（+1pct），风险 高1/中0</p>
-        <div class="quant-meta" id="quantMeta">
-          <span class="meta-tag">数据完整度 100%</span>
+        <div class="quant-meta" id="quantMeta" data-meta="1">
+          <span class="meta-tag" data-meta="1">数据完整度 100%</span>
           <span class="meta-tag neutral">五维 3 看多 · 2 中性</span>
           <span class="meta-tag">权益仓位 59%</span>
-          <span class="meta-tag neutral">采集 实测 19、代理 0、未取得 0</span>
+          <span class="meta-tag neutral" data-meta="1">采集 实测 19、代理 0、未取得 0</span>
           <span>静态快照 2026-10-26（示例数据包）；服务运行时由 <code>/api/quant</code> 按当日数据重算</span>
         </div>
         <div class="quant-steps" id="quantTimeline">
@@ -305,9 +305,9 @@
           <tr><td>市场中性</td><td>中性</td><td>用 IF 维持满额对冲<small>主力合约年化贴水：IF -2.40%、IC -5.80%、IM -8.60%。成本最低为 IF（-2.40%），当前对冲成本偏低。 对冲成本低，适合把敞口压满以锁定选股超额。</small></td></tr>
           <tr><td>贝塔轮动</td><td>看多</td><td>超配 半导体、通信<small>占优风格 小盘 · 成长。配置 半导体、通信，规避 公用事业、煤炭；主题侧优先 算力硬件（强）。纪律：单一行业上限 20%，组合止盈 +10%、止损 −5%，指数单日 −2.5% 触发整体减仓 10pct。</small></td></tr>
           <tr><td>事件驱动</td><td>看多</td><td>关注池 半导体（半导体设备招标落地）、有色金属（黄金配置需求回升）、示例A（业绩 +132.0%）、示例B（业绩 +96.5%）<small>明日关注：半导体（半导体设备招标落地）、有色金属（黄金配置需求回升）、示例A（业绩 +132.0%）、示例B（业绩 +96.5%）、示例C（业绩 +78.2%）、算力（舆情 96）、半导体（舆情 91）。事件驱动仓位不超过总权益 15%，单标的不超过 5%，事件兑现即减。</small></td></tr>
-          <tr><td>总仓位</td><td>中性</td><td>权益仓位中枢 <b>59%</b>（较上一日 +1pct）<small>五维加权 +0.29（基本面中性、配置中性、阿尔法看多、贝塔看多、另类看多）</small></td></tr>
+          <tr><td>总仓位</td><td>中性</td><td>权益仓位中枢 <b>59%</b>（较上一日 +1pct）<small data-meta="1">五维加权 +0.29（基本面中性、配置中性、阿尔法看多、贝塔看多、另类看多）</small></td></tr>
         </table>
-        <details class="quant-actions" id="quantProvenance">
+        <details class="quant-actions" id="quantProvenance" data-meta="1">
           <summary>采集明细 · 实测 19 / 代理 0 / 未取得 0（点击展开）</summary>
           <table class="quant-action-table">
             <tr><th>字段</th><th>状态</th><th>来源 / 缺口说明</th></tr>
@@ -387,7 +387,7 @@
             <tr><td>S5-04</td><td>异常打标与日志</td><td><code>report.mark</code></td><td>⚠️ 异常项、✅ 核心信号，以及本次实际使用的数据源</td></tr>
           </table>
         </details>
-        <div class="insight-foot"><span>五维评分、仓位公式与风险阈值全部写死在 <code>quant_daily.SCORING</code> / <code>RISK_RULES</code>，
+        <div class="insight-foot" data-meta="1"><span>五维评分、仓位公式与风险阈值全部写死在 <code>quant_daily.SCORING</code> / <code>RISK_RULES</code>，
           同输入必然同输出；信号只有看多 / 中性 / 看空三档。数据源主备切换与兜底规则见 <code>docs/quant_daily.md</code>，
           归档目录 <code>reports/</code>。日报为规则引擎产物，不构成投资建议。</span></div>
       </article>
@@ -412,7 +412,7 @@
           <span class="meta-tag neutral" id="sectorTag">科技 · 能源</span>
           <span class="meta-tag" id="policyTag" title="口径见下方「AI 政策分析」板块">政策 · 偏鹰</span>
         </div>
-        <div class="insight-foot">
+        <div class="insight-foot" data-meta="1">
           <span id="insightSource">基于六大板块 69 源境内外快讯（新增 20 个中英文 / 多类型财经社区）</span>
           <button class="arrow-btn" id="expandBtn" aria-label="展开 AI 分析">↗</button>
         </div>
@@ -442,7 +442,7 @@
             <li><span class="point-no">02</span><span class="point-label">两市成交额</span><span>沪深两市成交 2.13 万亿，较前一日放量 3172 亿（+17.5%），量价齐升、增量资金入场信号明确。</span></li>
             <li><span class="point-no">03</span><span class="point-label">涨跌家数与涨跌停</span><span>全市场超 3300 只个股上涨，涨停 77 家、跌停 3 家、封板率 82%，连板高度：深中华A 6 连板。</span></li>
             <li><span class="point-no">04</span><span class="point-label">领涨 / 领跌板块</span><span>领涨：<mark>算力硬件</mark>、<mark>存储芯片</mark>、农业、黄金；领跌：银行、白酒、电网设备。</span></li>
-            <li><span class="point-no">05</span><span class="point-label">主力资金与北向资金</span><span>机构与主力资金净流入主攻科技方向；北向实时数据自 2024 年 8 月起停止披露，以主力与两融口径观察。</span></li>
+            <li><span class="point-no">05</span><span class="point-label">主力资金与北向资金</span><span data-meta="1">机构与主力资金净流入主攻科技方向；北向实时数据自 2024 年 8 月起停止披露，以主力与两融口径观察。</span></li>
             <li><span class="point-no">06</span><span class="point-label">后市观点与策略</span><span>短线偏多但防高位轮动；催化：英伟达财报超预期；机构观点：未来 1-2 周是关键变盘窗口，9 月科技仍是核心主线。</span></li>
           </ul>
         </div>
@@ -512,7 +512,7 @@
         <div class="heatmap-grid" id="heatmapGrid" aria-live="polite"></div>
         <div class="heatmap-indicators" id="heatmapIndicators"></div>
         <div class="heatmap-drawer" id="heatmapDrawer" hidden></div>
-        <div class="insight-foot"><span id="heatmapFoot">每个格子=一个投资关键词，点格子看 9 维指标、两个港股现有 ETF 与对应指数；多柜台产品同时标注 HKD / CNY / USD 柜台，无纯主题产品时标注代理 · 仅统计信号，不构成投资建议</span></div>
+        <div class="insight-foot" data-meta="1"><span id="heatmapFoot" data-meta="1">每个格子=一个投资关键词，点格子看 9 维指标、两个港股现有 ETF 与对应指数；多柜台产品同时标注 HKD / CNY / USD 柜台，无纯主题产品时标注代理 · 仅统计信号，不构成投资建议</span></div>
       </article>
     </section>
 
@@ -524,7 +524,7 @@
       <article class="insight-card">
         <p class="policy-headline">政策面集中在<mark class="press">地缘与贸易政策</mark>与<mark class="press">资本市场监管</mark>（40 源命中 · 115 条提及），取向<mark class="press">偏鹰</mark>（鹰派 21 : 鸽派 4），收紧预期压制高估值与利率敏感资产；利好：<mark>货币政策</mark>、<mark>汇率与外汇干预</mark>；承压：<mark class="press">地缘与贸易政策</mark>、<mark class="press">资本市场监管</mark>；政策面多空 15 : 19，建议关注政策信号的「转向确认」，避免单边押注。</p>
         <ul class="insight-points sector-points">
-          <li class="group-row"><span class="group-label">政策主线</span><span class="group-note">按跨源命中 × 提及条数排序 · 每条给出政策净向与支撑新闻</span></li>
+          <li class="group-row"><span class="group-label">政策主线</span><span class="group-note" data-meta="1">按跨源命中 × 提及条数排序 · 每条给出政策净向与支撑新闻</span></li>
           <li><span class="point-no">01</span><span class="point-label press">地缘与贸易政策</span><span><mark class="press">政策净空 7</mark><span class="sector-stat">21 源命中 · 43 条提及</span><span class="stance-tag hawk">鹰派 13 : 鸽派 0</span>
             <ul class="sector-evidence">
               <li>· <span class="ev-src">华尔街见闻 最热</span>｜〔鹰〕美国拟禁止进口中国新型数据中心设备，我使馆：敦促美停止抹黑中企并威胁制裁</li>
@@ -542,12 +542,12 @@
             <ul class="sector-evidence">
               <li>· <span class="ev-src">华尔街见闻 快讯</span>｜〔鹰〕“新美联储通讯社”：贝森特政策反应函数转向不再那么鸽派</li>
             </ul></span></li>
-          <li class="group-row"><span class="group-label press">政策承压方向</span><span class="group-note">收紧 / 管制类信号占优，估值与情绪受压</span></li>
+          <li class="group-row"><span class="group-label press">政策承压方向</span><span class="group-note" data-meta="1">收紧 / 管制类信号占优，估值与情绪受压</span></li>
           <li><span class="point-no">01</span><span class="point-label press">地缘与贸易政策</span><span><mark class="press">净空 7</mark><span class="sector-stat">制裁、出口管制与海峡航运风险并存，资金回避高扰动资产</span></span></li>
-          <li class="group-row"><span class="group-label">政策利好方向</span><span class="group-note">宽松 / 扶持类信号占优，对市场构成支撑</span></li>
+          <li class="group-row"><span class="group-label">政策利好方向</span><span class="group-note" data-meta="1">宽松 / 扶持类信号占优，对市场构成支撑</span></li>
           <li><span class="point-no">01</span><span class="point-label">货币政策 · 美联储</span><span><mark>净多 2</mark><span class="sector-stat">降息路径与美元流动性预期反复定价，贵金属与出口链相对占优</span></span></li>
         </ul>
-        <div class="insight-foot"><span>政策取向由鹰派 / 鸽派词库判定，否定表述自动反转（如「不再那么鸽派」计为鹰派）· 与「AI 每日总结」「AI 板块机会」共用同一批浏览标题，页面为静态预览</span></div>
+        <div class="insight-foot" data-meta="1"><span>政策取向由鹰派 / 鸽派词库判定，否定表述自动反转（如「不再那么鸽派」计为鹰派）· 与「AI 每日总结」「AI 板块机会」共用同一批浏览标题，页面为静态预览</span></div>
       </article>
     </section>
 
@@ -579,7 +579,7 @@
           </div>
         </div>
         <ul class="insight-points sector-points" id="policyDeepList">
-          <li class="group-row"><span class="group-label">窗口内政策发布</span><span class="group-note">2026-08-25 至 2026-09-23 · 10 项已核验 · 新的在前 · 正式发布才计入「发布」</span></li>
+          <li class="group-row"><span class="group-label">窗口内政策发布</span><span class="group-note" data-meta="1">2026-08-25 至 2026-09-23 · 10 项已核验 · 新的在前 · 正式发布才计入「发布」</span></li>
           <li><span class="point-no">09-20</span><span class="point-label">LPR</span><span><mark>中性 · 发布</mark><span class="sector-stat">中国人民银行 · 1-4 周</span>
             <ul class="sector-evidence">
               <li>· 1 年期 3.0%、5 年期以上 3.5%，连续第 16 个月不变。7 天逆回购利率仍为 1.40%。</li>
@@ -630,11 +630,11 @@
               <li>· 有序推行商品住房现房销售，和同日信贷文件衔接：拿到房，再放贷。</li>
               <li>· 购房人信心改善，高杠杆房企回款不一定立即好转。指数方向不单列点位。</li>
             </ul></span></li>
-          <li class="group-row"><span class="group-label">板块传导</span><span class="group-note">跨政策加总 · 不是指数点位 · 同一天的地产文件按主题合并计分，避免把组合拳乘成三倍</span></li>
+          <li class="group-row"><span class="group-label">板块传导</span><span class="group-note" data-meta="1">跨政策加总 · 不是指数点位 · 同一天的地产文件按主题合并计分，避免把组合拳乘成三倍</span></li>
           <li><span class="point-no">＋</span><span class="point-label">受益</span><span>地产链、内房股、券商 / 中资券商、银行。驱动是 8 月 28 日信贷、再融资和现房销售，加上 9 月 10 日金融十五五的中期路线图。</span></li>
           <li><span class="point-no">－</span><span class="point-label press">承压</span><span>长久期成长、AI 算力、道指成分、恒生科技。驱动是杰克逊霍尔信号、欧央行加息，以及 9 月 16 日美联储已观测的收跌。</span></li>
         </ul>
-        <div class="insight-foot"><span id="policyDeepFoot">窗口截止 2026-09-23，最新已核验发文是 2026-09-20。此后没有写入台账的新发文；未核实日期的快讯不当成政策发布。8 月 19 日美债回购发文在窗口外，不重复计入。指数分可复算，仅供参考，不构成投资建议。实时结果见 <code>/api/policy</code></span></div>
+        <div class="insight-foot" data-meta="1"><span id="policyDeepFoot" data-meta="1">窗口截止 2026-09-23，最新已核验发文是 2026-09-20。此后没有写入台账的新发文；未核实日期的快讯不当成政策发布。8 月 19 日美债回购发文在窗口外，不重复计入。指数分可复算，仅供参考，不构成投资建议。实时结果见 <code>/api/policy</code></span></div>
       </article>
     </section>
 
@@ -646,7 +646,7 @@
       <article class="insight-card">
         <p class="policy-headline"><mark class="press">政策承压（偏空）</mark>，收紧 / 管制取向且政策面净空占优；当日覆盖 40 个数据源、115 条提及，取向<mark class="press">偏鹰</mark>（鹰派 21 : 鸽派 4），政策面多空 15 : 19，时间尺度为短期 1-4 周、中期 1-6 个月、长期 6-36 个月。</p>
         <ul class="insight-points sector-points">
-          <li class="group-row"><span class="group-label">政策影响思维导图</span><span class="group-note">根节点 = 当日政策主线 · 8 个分析维度</span></li>
+          <li class="group-row"><span class="group-label">政策影响思维导图</span><span class="group-note" data-meta="1">根节点 = 当日政策主线 · 8 个分析维度</span></li>
           <li class="mm-root"><span class="mm-node">▣ AI 政策分析 · 地缘与贸易政策</span></li>
           <li><span class="point-no">·</span><span class="point-label">宏观背景</span><span class="mm-tree"><span class="mm-node">├─ 热度集中在「地缘与贸易政策、资本市场监管、财政」（40 源 · 115 条）</span><span class="mm-node">├─ 取向偏鹰（鹰派 21 : 鸽派 4）</span><span class="mm-node">└─ 术语口径中性（加权强度 -0.67）</span></span></li>
           <li><span class="point-no">·</span><span class="point-label press">行业限制</span><span class="mm-tree"><span class="mm-node">├─ 地缘与贸易政策 政策净空 7 · 偏鹰</span><span class="mm-node">├─ 资本市场监管 政策净空 3 · 中性</span><span class="mm-node">└─ 其余行业影响待当日政策信号确认</span></span></li>
@@ -655,27 +655,27 @@
           <li><span class="point-no">·</span><span class="point-label">产业链传导</span><span class="mm-tree"><span class="mm-node">├─ 白宫 / 商务部 → 半导体设备、存储芯片、军工 → 出口管制清单 → 终端成本</span><span class="mm-node">└─ 证监会 / 交易所 → 券商、高股息蓝筹、中小市值题材 → 发行上市准入 → 市场估值中枢</span></span></li>
           <li><span class="point-no">·</span><span class="point-label">政策窗口期</span><span class="mm-tree"><span class="mm-node">└─ 预期差（官媒口径中性 / 市场解读负向）+0.37，细则落地前后常收敛</span></span></li>
           <li><span class="point-no">·</span><span class="point-label">模型视角</span><span class="mm-tree"><span class="mm-node">├─ LSTM：10 日累计 +0.43%（上行），动能衰减，政策情景（偏紧）相对基线 -0.09pct</span><span class="mm-node">└─ Prophet 式分解：趋势 +5.83%、周度季节振幅 0.22%、政策窗口内 / 外波动 1.41×</span></span></li>
-          <li class="group-row"><span class="group-label">LSTM · 中长期走势节奏</span><span class="group-note">纯 Python 单层 LSTM + BPTT · 隐藏单元 3 · 回看 5 步 · 外推 10 日 · 样本 60 根日 K（合成演示序列，无实时行情）</span></li>
-          <li><span class="point-no">L</span><span class="point-label">模型情景</span><span><mark>10 日累计 +0.43%</mark><span class="sector-stat">上行 · 前 3 日 +0.15% / 4-7 日 +0.32% · 全程同向未出现拐点 · 动能衰减</span>
+          <li class="group-row"><span class="group-label">LSTM · 中长期走势节奏</span><span class="group-note" data-meta="1">纯 Python 单层 LSTM + BPTT · 隐藏单元 3 · 回看 5 步 · 外推 10 日 · 样本 60 根日 K（合成演示序列，无实时行情）</span></li>
+          <li><span class="point-no">L</span><span class="point-label" data-meta="1">模型情景</span><span><mark>10 日累计 +0.43%</mark><span class="sector-stat">上行 · 前 3 日 +0.15% / 4-7 日 +0.32% · 全程同向未出现拐点 · 动能衰减</span>
             <ul class="sector-evidence">
               <li>· 政策情景输入偏移 -0.69（鹰鸽取向 + 修饰词强度）→ 相对基线偏移 -0.09 个百分点</li>
               <li>· 训练样本 54 窗 · 30 轮 · 损失 0.527 → 0.501；模型情景非预测，仅供参考、不作为投资依据</li>
             </ul></span></li>
-          <li class="group-row"><span class="group-label">Prophet 式分解 · 剥离季节看政策窗口</span><span class="group-note">趋势 + 季节性（周度傅里叶）+ 政策突变哑变量 · 岭回归拟合</span></li>
+          <li class="group-row"><span class="group-label">Prophet 式分解 · 剥离季节看政策窗口</span><span class="group-note" data-meta="1">趋势 + 季节性（周度傅里叶）+ 政策突变哑变量 · 岭回归拟合</span></li>
           <li><span class="point-no">P</span><span class="point-label">分解结果</span><span><mark>样本内趋势 +5.83%</mark><span class="sector-stat">当前 -0.084%/日 · 周度季节振幅 0.22% · 去季节化残差波动 0.36%/日 · R² 0.969</span>
             <ul class="sector-evidence">
               <li>· 政策效应（事件研究口径 / 回归口径）：2026-06-15 -1.53% / -0.56%（负向冲击）</li>
               <li>· 政策窗口内 / 外波动 1.41×；10 日去季节化外推累计 -1.17%</li>
             </ul></span></li>
-          <li class="group-row"><span class="group-label press">长远冲击评估</span><span class="group-note">结构性 vs 周期性 · 沿产业链传导路径与时间尺度评估</span></li>
+          <li class="group-row"><span class="group-label press">长远冲击评估</span><span class="group-note" data-meta="1">结构性 vs 周期性 · 沿产业链传导路径与时间尺度评估</span></li>
           <li><span class="point-no">01</span><span class="point-label press">净空 · 结构性</span><span>半导体设备、存储芯片、军工<span class="sector-stat">6-36 个月 · 出口管制清单 → 供应链改道 → 终端成本</span></span></li>
           <li><span class="point-no">02</span><span class="point-label press">净空 · 结构性</span><span>券商、高股息蓝筹、中小市值题材<span class="sector-stat">12-36 个月 · 发行上市准入与退市规则 → 筹码供给 → 估值中枢</span></span></li>
           <li><span class="point-no">03</span><span class="point-label press">净空 · 结构性</span><span>基建、设备制造、消费<span class="sector-stat">6-24 个月 · 赤字与专项债额度 → 项目资本金 → 钢材水泥需求</span></span></li>
           <li><span class="point-no">04</span><span class="point-label">净多 · 周期性</span><span>全球风险资产、贵金属、出口链<span class="sector-stat">3-12 个月 · 联邦基金利率 → 外资流向 → 科技成长估值</span></span></li>
-          <li class="group-row"><span class="group-label press">风险提示</span><span class="group-note">政策口径回摆与样本外事件</span></li>
+          <li class="group-row"><span class="group-label press">风险提示</span><span class="group-note" data-meta="1">政策口径回摆与样本外事件</span></li>
           <li><span class="point-no">!</span><span class="point-label press">风险</span><span>收紧取向若被数据强化，高估值与利率敏感方向存在二次调整风险；官媒口径与市场化解读情绪分歧较大（+0.37），政策口径回摆可能放大波动。</span></li>
         </ul>
-        <div class="insight-foot"><span>LSTM 捕捉时间序列的非线性与长期依赖、评估政策后的中长期节奏；Prophet 式加性分解剥离季节性后度量政策窗口期的中期波动。以上为模型化统计与推演，仅供参考、不作为投资依据；政策细则以官方原文为准</span></div>
+        <div class="insight-foot" data-meta="1"><span data-meta="1">LSTM 捕捉时间序列的非线性与长期依赖、评估政策后的中长期节奏；Prophet 式加性分解剥离季节性后度量政策窗口期的中期波动。以上为模型化统计与推演，仅供参考、不作为投资依据；政策细则以官方原文为准</span></div>
       </article>
     </section>
 
@@ -686,7 +686,7 @@
       </div>
       <article class="insight-card">
         <ul class="insight-points sector-points">
-          <li class="group-row"><span class="group-label">机会方向</span><span class="group-note">净多头信号板块 · 按信号强度 × 跨源热度排序 · Top 4</span></li>
+          <li class="group-row"><span class="group-label">机会方向</span><span class="group-note" data-meta="1">净多头信号板块 · 按信号强度 × 跨源热度排序 · Top 4</span></li>
           <li><span class="point-no">01</span><span class="point-label">美联储</span><span><mark>净多 6</mark><span class="sector-stat">11 源命中 · 20 条提及</span><span class="sector-stat"><b>港股 ETF 双标的：</b>03436.HK 恒生美国国债 1-3 年 ETF ＋ 03156.HK 博时美国国债 20+ 年 ETF<br>对应标的：Hang Seng CMS Bloomberg US Treasury 1-3 Year Index ＋ ICE US Treasury 20+ Year Bond Index</span>
             <ul class="sector-evidence">
               <li>· <span class="ev-src">华尔街见闻最新</span>｜市场错判了AI？云业务积压订单暴增150%达1.7万亿美元</li>
@@ -704,13 +704,13 @@
             <ul class="sector-evidence">
               <li>· <span class="ev-src">Google news 中文</span>｜全球科技巨头发布财报，AI 支出超预期</li>
             </ul></span></li>
-          <li class="group-row"><span class="group-label press">承压方向</span><span class="group-note">净空头信号板块 · 资金回避方向 · Top 2</span></li>
+          <li class="group-row"><span class="group-label press">承压方向</span><span class="group-note" data-meta="1">净空头信号板块 · 资金回避方向 · Top 2</span></li>
           <li><span class="point-no">01</span><span class="point-label press">地缘</span><span><mark class="press">净空 3</mark><span class="sector-stat">8 源命中 · 11 条提及</span><span class="sector-stat"><b>港股 ETF 双标的：</b>02840.HK SPDR 金 ETF ＋ 03197.HK 国泰海通全球战略资源 ETF<br>对应标的：LBMA Gold Price PM ＋ Global Strategic Resources Index</span>
             <ul class="sector-evidence">
               <li>· <span class="ev-src">华尔街见闻 快讯</span>｜淡水河谷CEO：伊朗战争造成诸多项目的速度放缓</li>
             </ul></span></li>
         </ul>
-        <div class="insight-foot"><span>与「AI 每日总结」共用多空信号统计 · 每项固定给出两个港交所现有 ETF 与对应指数，无纯主题产品时明确标注代理 · 页面为静态预览，实时排行随每次推送更新</span></div>
+        <div class="insight-foot" data-meta="1"><span>与「AI 每日总结」共用多空信号统计 · 每项固定给出两个港交所现有 ETF 与对应指数，无纯主题产品时明确标注代理 · 页面为静态预览，实时排行随每次推送更新</span></div>
       </article>
     </section>
 
@@ -720,7 +720,7 @@
         <span class="ai-pill" id="bigVPill">预测历史框架</span>
       </div>
       <article class="insight-card bigv-card">
-        <div class="bigv-notice">
+        <div class="bigv-notice" data-meta="1">
           <b>AI 框架仿推演</b>：用 AI 复现「预测历史」框架的<strong>逻辑推导</strong>，只借鉴公开资料中可验证的结构史观、博弈论、成本账、历史类比与情景证伪；不模仿其语气，不代表本人观点、原话或背书。不可证伪的末世论 / 秘密组织叙事不进入推演。
         </div>
 
@@ -822,7 +822,7 @@
           <a href="https://www.aljazeera.com/news/2026/10/23/foreign-policy-is-the-economy-how-iran-war-is-shaping-us-midterm-vote" target="_blank" rel="noopener noreferrer">Al Jazeera 10/23</a> ·
           <a href="https://www.newsquawk.com/headlines/newsquawk-daily-us-opening-news---26th-october-2026" target="_blank" rel="noopener noreferrer">Newsquawk 10/26</a>
         </div>
-        <div class="insight-foot" id="bigVFoot"><span>方法边界：历史类比只生成假设；“情景关注度”不是统计概率或投资建议。页面静态快照为 2026-10-26；服务运行时按当日抓取标题重算，实时结果见 <code>/api/big-v</code>。</span></div>
+        <div class="insight-foot" id="bigVFoot" data-meta="1"><span>方法边界：历史类比只生成假设；“情景关注度”不是统计概率或投资建议。页面静态快照为 2026-10-26；服务运行时按当日抓取标题重算，实时结果见 <code>/api/big-v</code>。</span></div>
       </article>
     </section>
 
@@ -839,12 +839,12 @@
         </form>
         <div class="ds-search-state" id="dsSearchState">DeepSeek 自研搜索引擎（2026-10-17 开放）· 服务端配置 DEEPSEEK_API_KEY 后可用；未配置时全部搜索型数据源自动回退原 RSS 通道。</div>
         <ul class="ds-search-results" id="dsSearchResults"></ul>
-        <div class="insight-foot"><span>经 <code>/api/search</code> 调用 <code>POST /v1/tools/search</code>，结果按 rerank_score（0-3）与 authority（0-4）标注；按成功请求计费 $0.75/千次，同一查询 5 分钟内走缓存 · 搜索结果仅供调研，不构成投资建议</span></div>
+        <div class="insight-foot" data-meta="1"><span>经 <code>/api/search</code> 调用 <code>POST /v1/tools/search</code>，结果按 rerank_score（0-3）与 authority（0-4）标注；按成功请求计费 $0.75/千次，同一查询 5 分钟内走缓存 · 搜索结果仅供调研，不构成投资建议</span></div>
       </article>
     </section>
 
     <footer>
-      <strong>作者：章鱼 ai　　仅供参考，分析研究</strong>
+      <strong>作者：章鱼 ai</strong>
     </footer>
   </main>
 
