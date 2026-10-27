@@ -1451,3 +1451,17 @@ footer strong { display: block; color: var(--ink); text-align: center; font-size
   .quant-action-table td:nth-child(4) { display: none; }
   .quant-action-table th:nth-child(4) { display: none; }
 }
+
+/* 去 AI 味 · 改写对照（前 → 后）与未自动改写原因 */
+.deai-diff-wrap { margin: 12px 0 0; }
+.deai-diff-wrap > b { display: block; color: var(--ink); font-size: 11px; margin-bottom: 6px; }
+.deai-diffs { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.deai-diffs li {
+  display: grid; gap: 3px; padding: 7px 9px; border: 1px solid var(--rule);
+  border-radius: 8px; background: var(--paper); font-size: 10.5px; line-height: 1.6;
+}
+.deai-diffs .diff-gate { color: var(--ink-soft); font-size: 9.5px; letter-spacing: .02em; }
+.deai-diffs .diff-before { color: var(--gray-dark); text-decoration: line-through; text-decoration-thickness: 1px; }
+.deai-diffs .diff-after { color: var(--ink); font-weight: 700; }
+.deai-diffs .diff-arrow { color: var(--ink-soft); margin: 0 4px; }
+.deai-diffs .diff-why { color: var(--ink-soft); }

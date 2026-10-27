@@ -63,7 +63,9 @@ curl "http://localhost:4173/api/hallmark?mode=audit"     # 回显请求模式
 `prompt` / `config` / `gates` / `overall_score_before` / `overall_score_after` /
 `surfaces.push` / `surfaces.page`。每个 surface 含 `before` / `after` 两份
 `audit()` 报告（分数、逐 gate 命中、样例、修法、tier、是否可自动修复）、
-`fixes`（本轮改写清单）、`changed`、`score_delta`。
+`fixes`（本轮改写清单）、`fixed_count`（本轮实际改掉的处数合计）、
+`diffs`（改写对照：最多 8 条「前 → 后」片段，页面直接展示）、
+`blocked`（没自动改的项以及**为什么**不改，逐条给理由）、`changed`、`score_delta`。
 报告不含改写后的完整 HTML（`_slim()` 裁剪），避免 `/api/hallmark` 返回超大正文。
 
 命令行自检（不需要起服务）：
@@ -73,6 +75,23 @@ python3 hallmark_deai.py report brief-output.html
 python3 hallmark_deai.py report index.html --css styles.css --surface page
 python3 hallmark_deai.py polish index.html --css styles.css --surface page --write
 ```
+
+### 2.2.1 分数怎么算（以及为什么以前「看不出变化」）
+
+每个命中项扣分：`tier 权重 × (1 + 0.7 × √min(命中数, 40))`，tier 权重
+Floor 6 / Reflex 3 / Finish 1。
+
+旧公式是 `1 + min(n-1, 4) × 0.15`：命中数到 5 处就不再增长。于是「改掉 33 处里的 25 处」
+和「一处都没改」扣一样的分，页面上显示 **75 → 75**，看起来像没生效——这正是「去 AI 味不明显」
+的主要原因。现在改成随命中数连续增长、不封顶：同一份推送实测 **45 → 57（+12）**，
+修一处就掉一处分。
+
+另外两件事也必须一起说清，否则分数动了还是看不懂：
+
+1. **可自动改的只有装饰层**（中点串联、眉标、装饰符号、CSS 机习惯）。文案套话、
+   卡片套卡片、破折号密度这些要么怕改错事实，要么要重排版式，因此 `auto=False`。
+2. **改不动的项现在会写明理由**（`blocked` 字段 + 页面「没自动改的原因」）。报告区分
+   「已修 / 修不动 / 受保护正文」三态，不再让人误以为闸门没跑。
 
 ### 2.3 源码级「去 AI 味」
 
@@ -88,6 +107,8 @@ python3 hallmark_deai.py polish index.html --css styles.css --surface page --wri
   否则页面运行时会把刚去掉的痕迹重新注入回来。
 - 推送 HTML（`sources.py` 的内联 CSS 与生成模板）：模板开头加 Hallmark 印记，
   两处装饰 `✦` 改成中性分隔符；`brief-output.html` 快照同步重新生成。
+- 标签判定范围扩到 `<small>`：卡片里「超预期 5 · 符合 2 · 不及 3」这类元信息与
+  `tag` / `sub` 同级处理，管理页自身也跑一遍 `polish --write` 写回源码。
 - 保留项（waiver）：🐙 品牌字标、`＋` 全角加号（**两只 ETF 名称的真实分隔符，
   不是装饰**）、`↻ ↗ ☼ ◐ ▶` 功能图标、因果链箭头、邮件模板内联字面色、
   `章鱼 AI·全景分析` 产品名里的间隔号。理由逐条写在 `WAIVERS` 与报告里。
