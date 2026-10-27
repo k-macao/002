@@ -468,6 +468,130 @@ def parse_date(text: str) -> str:
     return ""
 
 
+def _date_candidates(text: str) -> list[tuple[int, int, str]]:
+    """文本里所有可解析日期：(start, end, ISO)。用于判断日期是不是紧贴在链接前面。"""
+    raw = str(text or "")
+    found = []
+    for pattern, _ in _DATE_PATTERNS:
+        for match in pattern.finditer(raw):
+            try:
+                found.append((match.start(), match.end(),
+                              date(int(match.group(1)), int(match.group(2)), int(match.group(3))).isoformat()))
+            except ValueError:
+                continue
+    for pattern, month_group, day_group, year_group in ((_EN_DATE_DMY, 2, 1, 3), (_EN_DATE, 1, 2, 3)):
+        for match in pattern.finditer(raw):
+            name = match.group(month_group).lower()
+            month = _MONTHS.get(next((key for key in _MONTHS if key.startswith(name)), ""), 0)
+            if not month:
+                continue
+            try:
+                found.append((match.start(), match.end(),
+                              date(int(match.group(year_group)), month, int(match.group(day_group))).isoformat()))
+            except ValueError:
+                continue
+    return sorted(found)
+
+
+_BLOCK_OPEN = re.compile(r"<(?:div|li|tr|td|th|dd|dt|p|span|time|h[1-6])\b[^>]*>", re.I)
+_TAG_RX = re.compile(r"<!--.*?-->|<[^>]+>", re.S)
+_VOID_TAGS = {"br", "img", "meta", "link", "input", "hr", "source", "area", "base",
+              "col", "embed", "param", "track", "wbr"}
+
+
+_INLINE_TAGS = {"a", "span", "time", "b", "strong", "em", "i", "small", "mark",
+                "u", "s", "code", "sup", "sub", "label", "br"}
+
+
+def _block_path(path: tuple) -> tuple:
+    """去掉行内标签，只留块级容器：判断两个位置是不是落在同一条目（或同一父容器的兄弟块）里。"""
+    return tuple(node for node in path if node[0] not in _INLINE_TAGS)
+
+
+def _element_paths(text: str, positions: list[int]) -> dict[int, tuple]:
+    """给定若干字符位置，返回每个位置所在的元素栈（单次扫描，栈里是 (tag, 起始位置)）。"""
+    wanted = sorted(set(positions))
+    paths, stack, cursor = {}, [], 0
+    for token in _TAG_RX.finditer(text):
+        while cursor < len(wanted) and wanted[cursor] < token.start():
+            paths[wanted[cursor]] = tuple(stack)
+            cursor += 1
+        raw = token.group(0)
+        if raw.startswith("<!--"):
+            continue
+        name = re.match(r"</?\s*([a-zA-Z0-9:_-]+)", raw)
+        if not name:
+            continue
+        tag = name.group(1).lower()
+        if raw.startswith("</"):
+            for index in range(len(stack) - 1, -1, -1):
+                if stack[index][0] == tag:
+                    del stack[index:]
+                    break
+        elif tag in _VOID_TAGS or raw.endswith("/>"):
+            continue
+        else:
+            stack.append((tag, token.start()))
+    for position in wanted[cursor:]:
+        paths[position] = tuple(stack)
+    return paths
+
+
+def _date_shares_item(text: str, date_pos: int, anchor_pos: int, paths: dict | None = None) -> bool:
+    """日期和链接是否属于同一条目：同一个容器，或同一父容器下的两个兄弟块。
+
+    美联储是「日期 div + 标题 div」的兄弟结构，同属一个 row；而上一条新闻的日期与本条链接
+    分属两个不同的 row，会被判为不同条目——这样不会把上一条的日期安到这一条头上。
+    """
+    if paths is None:
+        paths = _element_paths(text, [date_pos, anchor_pos])
+    left, right = _block_path(paths.get(date_pos, ())), _block_path(paths.get(anchor_pos, ()))
+    if not left or not right:
+        return False
+    if left[-1] == right[-1]:
+        return True
+    if len(left) >= 2 and len(right) >= 2 and left[-2] == right[-2]:
+        # 兄弟块也算同一条目（美联储是「日期 div + 标题 div」），但日期所在块里若已经有一条链接，
+        # 那这个日期属于上一条新闻，不能借给当前链接。
+        if re.search(r"<a\b", text[left[-1][1]:anchor_pos], re.I):
+            return False
+        return True
+    return False
+
+
+def _date_after(text: str, anchor_pos: int, start: int, stop: int,
+                dates: list | None = None, paths: dict | None = None) -> str:
+    """链接之后的日期：只取与这条链接同属一个条目的那一个（日期常被 <span> / <time> 包着）。"""
+    if dates is None:
+        dates = [(start + begin, start + end, stamp)
+                 for begin, end, stamp in _date_candidates(text[start:stop])]
+    for begin, end, stamp in dates:
+        if start <= begin and end <= stop and _date_shares_item(text, begin, anchor_pos, paths):
+            return stamp
+    return ""
+
+
+def _date_before(text: str, pos: int, span: int = 220, max_tail: int = 8,
+                 dates: list | None = None, paths: dict | None = None) -> str:
+    """链接**前面**的日期（美联储 / 欧洲央行 / 美国财政部的列表页都是日期在前、标题在后）。
+
+    只认「日期与链接之间除了标签没有别的内容」的那一个：否则会把上一条新闻的日期
+    安到这一条头上（上一条的日期与当前链接之间隔着上一条的标题）。
+    """
+    origin = max(0, pos - span)
+    if dates is None:
+        dates = _date_candidates(text[origin:pos])
+        dates = [(origin + begin, origin + end, stamp) for begin, end, stamp in dates]
+    near = [(begin, end, stamp) for begin, end, stamp in dates if origin <= begin and end <= pos]
+    for begin, end, stamp in reversed(near[-3:]):
+        if len(_clean(text[end:pos])) > max_tail:
+            continue
+        if not _date_shares_item(text, begin, pos, paths):
+            continue
+        return stamp
+    return ""
+
+
 def _clean(text: str) -> str:
     return re.sub(r"\s+", " ", _html.unescape(re.sub(r"<[^>]+>", " ", str(text or "")))).strip()
 
@@ -502,12 +626,15 @@ def parse_links(html: str, source: dict) -> list[dict]:
     """官方列表页 → 条目列表。
 
     政府 / 央行站点没有统一模板，这里只做保守解析：锚文本要像政策文件，
-    日期取锚文本内或其后 240 个字符里的第一个日期，链接必须落在该机构的官方域名下。
+    日期取锚文本内、其后 240 个字符里、或**紧贴在链接前面**的日期
+    （美联储 / 欧洲央行 / 美国财政部把日期放在标题左边），链接必须落在该机构的官方域名下。
     解析不到就返回空——宁可这条源标 empty，也不要编一个标题出来。
     """
     text = str(html or "")
     out = []
     anchors = list(_ANCHOR.finditer(text))
+    dates = _date_candidates(text)
+    paths = _element_paths(text, [match.start() for match in anchors] + [row[0] for row in dates])
     for index, match in enumerate(anchors):
         href, inner = match.group(1), _clean(match.group(2))
         url = href if href.startswith("http") else ""
@@ -524,7 +651,9 @@ def parse_links(html: str, source: dict) -> list[dict]:
             continue
         # 日期只看「本条锚点到下一条锚点之间」：跨条目取日期会把下一条的日期安到这一条头上。
         stop = anchors[index + 1].start() if index + 1 < len(anchors) else len(text)
-        stamp = parse_date(inner) or parse_date(text[match.end():min(match.end() + 240, stop)])
+        stamp = (parse_date(inner)
+                 or _date_after(text, match.start(), match.end(), min(match.end() + 240, stop), dates, paths)
+                 or _date_before(text, match.start(), dates=dates, paths=paths))
         if not stamp:
             continue
         out.append({"title": inner, "url": url, "date": stamp, "source": source["key"]})

@@ -1633,6 +1633,35 @@ class PolicyOfficialSourceTest(unittest.TestCase):
         items = pi.parse_links(html, pi._BY_KEY["ust"])
         self.assertEqual([item["date"] for item in items], ["2026-10-22"])
 
+    def test_parse_links_reads_date_placed_before_title(self):
+        # 美联储 / 欧洲央行 / 美国财政部都是日期在左、标题在右。
+        pi = sources.policy_impact
+        fed = ('<div class="row"><div class="col date">October 28, 2026</div>'
+               '<div class="col"><a href="https://www.federalreserve.gov/newsevents/pressreleases/'
+               'monetary20261028a.htm">Federal Reserve issues FOMC statement</a></div></div>'
+               '<div class="row"><div class="col date">October 24, 2026</div>'
+               '<div class="col"><a href="https://www.federalreserve.gov/newsevents/pressreleases/'
+               'bcreg20261024a.htm">Agencies issue final rule on capital</a></div></div>')
+        self.assertEqual([item["date"] for item in pi.parse_links(fed, pi._BY_KEY["fed"])],
+                         ["2026-10-28", "2026-10-24"])
+        ecb = ('<dl><dt>16 October 2026</dt><dd><a href="https://www.ecb.europa.eu/press/pr/date/'
+               '2026/html/ecb.mp261016.en.html">Monetary policy decisions</a></dd></dl>')
+        self.assertEqual([item["date"] for item in pi.parse_links(ecb, pi._BY_KEY["ecb"])], ["2026-10-16"])
+        ust = ('<div class="row"><div class="date">October 22, 2026</div><div class="title">'
+               '<a href="https://home.treasury.gov/news/press-releases/sb0234">'
+               'Treasury Announces Marketable Borrowing Estimates</a></div></div>')
+        self.assertEqual([item["date"] for item in pi.parse_links(ust, pi._BY_KEY["ust"])], ["2026-10-22"])
+
+    def test_previous_item_date_does_not_leak(self):
+        # 上一条的日期不能被安到下一条没有日期的条目上（宁可丢掉这条，也不标错日期）。
+        pi = sources.policy_impact
+        html = ('<div><a href="https://www.federalreserve.gov/newsevents/pressreleases/x20261001a.htm">'
+                'Speech one on policy</a><span>2026-10-01</span></div>'
+                '<div><a href="https://www.federalreserve.gov/newsevents/pressreleases/y20261002a.htm">'
+                'Statement without its own date</a></div>')
+        self.assertEqual([item["title"] for item in pi.parse_links(html, pi._BY_KEY["fed"])],
+                         ["Speech one on policy"])
+
     def test_parse_rss(self):
         pi = sources.policy_impact
         items = pi.parse_rss(self.RSS_XML, pi._BY_KEY["ecb"])
