@@ -137,7 +137,57 @@ _SAMPLE_GOV_HTML = """
 """
 
 
-class SectionTest(unittest.TestCase):
+class _NewsCardOn:
+    """把这些用例里的「全网快讯」卡片临时打开。
+
+    卡片默认隐藏（``sources.NEWS_CARD_ENABLED = False``，2026-10-27 按需求隐藏），
+    但卡片本身的分组 / 去重 / 转义 / 容量收敛口径仍要守住，所以测这些行为时显式打开开关，
+    用完复原——隐藏的是「默认是否出现」，不是「这段逻辑还不还在」。
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._news_card_enabled = sources.NEWS_CARD_ENABLED
+        sources.NEWS_CARD_ENABLED = True
+
+    def tearDown(self):
+        sources.NEWS_CARD_ENABLED = self._news_card_enabled
+        super().tearDown()
+
+
+class NewsCardHiddenTest(unittest.TestCase):
+    """「全网快讯」卡片按要求隐藏：正文不再出现，但抓取与信号统计一点也不少。"""
+
+    def test_card_is_hidden_by_default(self):
+        self.assertFalse(sources.NEWS_CARD_ENABLED)
+        brief = {name: sources._demo_items(name)[:2] for name in sources.SOURCES}
+        out = sources.build_html(brief)
+        self.assertNotIn("全网快讯", out)
+        self.assertNotIn("每源精选", out)
+        # 该在的还在：分析栏目、免责声明、落款都不动。
+        self.assertIn("AI 每日总结", out)
+        self.assertIn("AI 看盘", out)
+        self.assertIn("不构成投资建议", out)
+        self.assertIn("作者：章鱼 ai", out)
+
+    def test_hidden_card_does_not_drop_collected_news(self):
+        # 隐藏的是卡片，不是数据：原始快讯仍参与信号统计（这里是多空 / 板块统计）。
+        brief = {name: sources._demo_items(name)[:3] for name in sources.SOURCES}
+        ana = sources.analyze_brief(brief)
+        self.assertGreater(ana["signals"], 0)
+        self.assertGreater(ana["bull"], 0)
+        self.assertTrue(ana["sections"])
+
+    def test_switch_restores_card(self):
+        brief = {"金十数据": [{"title": "开关恢复后的快讯标题", "url": ""}]}
+        sources.NEWS_CARD_ENABLED = True
+        try:
+            self.assertIn("全网快讯", sources.build_html(brief))
+        finally:
+            sources.NEWS_CARD_ENABLED = False
+
+
+class SectionTest(_NewsCardOn, unittest.TestCase):
     """六大板块：板块目录、按板块抓取、通用 RSS·Atom / 列表页抓取器、公民科技 JSON 解析、快讯分组渲染。"""
 
     def test_section_catalog(self):
@@ -537,7 +587,7 @@ class HKEtfPairTest(unittest.TestCase):
         self.assertIn("CNY 83599.HK", heatmap)
 
 
-class QuantDailyWiringTest(unittest.TestCase):
+class QuantDailyWiringTest(_NewsCardOn, unittest.TestCase):
     """「AI 量化日报」接入推送：卡片必须存在、位置在快讯之前、内容不编数。"""
 
     def _brief(self):
@@ -1386,7 +1436,7 @@ class PolicyMarketImpactTest(unittest.TestCase):
         self.assertIn("政策法规知识库检索", deep)
 
 
-class BuildHtmlTest(unittest.TestCase):
+class BuildHtmlTest(_NewsCardOn, unittest.TestCase):
 
     def _kanpan(self):
         """注入三市场快照，避免 HTML 测试打行情接口，并让看盘内容可断言。"""

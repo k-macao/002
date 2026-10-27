@@ -110,7 +110,14 @@ class BuildHtmlIntegrationTest(unittest.TestCase):
         self.assertEqual(data["big_v"]["column"], "大 V 分析")
 
     def test_build_html_renders_big_v_between_sectors_and_news(self):
-        out = sources.build_html(self._brief(), **self._kanpan())
+        # 「全网快讯」卡片已隐藏（sources.NEWS_CARD_ENABLED = False），这里临时打开，
+        # 验证「大 V 分析」仍排在「AI 板块机会」之后、「全网快讯」之前。
+        original = sources.NEWS_CARD_ENABLED
+        sources.NEWS_CARD_ENABLED = True
+        try:
+            out = sources.build_html(self._brief(), **self._kanpan())
+        finally:
+            sources.NEWS_CARD_ENABLED = original
         for token in ("大 V 分析", "六步逻辑推导", "政治 × 地缘 × 经济", "升级博弈树", "证伪信号"):
             self.assertIn(token, out)
 
