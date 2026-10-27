@@ -621,7 +621,7 @@ def render_policy_impact_rows(impact: dict | None, esc, level: int = 2) -> str:
             + "</td></tr>"
         )
     board = impact.get("sector_board") or {}
-    if level > 1 and (board.get("support") or board.get("pressure")):
+    if level > 1:
         rows.append(
             f'<tr><td colspan="2" class="td-hdr">{tag("板块传导")} '
             f'<span class="sub">跨政策加总 · 不是指数点位</span></td></tr>'
@@ -634,12 +634,18 @@ def render_policy_impact_rows(impact: dict | None, esc, level: int = 2) -> str:
                 for row in rows_in[:3]
             )
             return f'<div class="ev">{tag(label, cls)} {text}</div>'
-        rows.append(
-            f'<tr><td class="td-n">板</td><td class="td-t">'
-            f'{_sec_line(board.get("support") or [], "受益", "tag")}'
-            f'{_sec_line(board.get("pressure") or [], "承压", "tag-d")}'
-            f'</td></tr>'
-        )
+        if board.get("support") or board.get("pressure"):
+            rows.append(
+                f'<tr><td class="td-n">板</td><td class="td-t">'
+                f'{_sec_line(board.get("support") or [], "受益", "tag")}'
+                f'{_sec_line(board.get("pressure") or [], "承压", "tag-d")}'
+                f'</td></tr>'
+            )
+        else:
+            rows.append(
+                '<tr><td colspan="2" class="sub" style="padding:6px 0;">'
+                '窗口内没有已核验政策贡献，板块传导不外推。</td></tr>'
+            )
     rows.append(
         f'<tr><td colspan="2" class="sub" style="padding:6px 0;">{esc(impact.get("gap_note") or "")}'
         f' 以下历史知识库与推理链是对照，不计入近30日发文。</td></tr>'

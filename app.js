@@ -506,6 +506,106 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
   window._policyDeepReload=loadPolicyDeep;
 })();
 
+/* ---- 大 V 分析 · 江学勤「预测历史」框架启发的 AI 仿推演 ----
+   静态页保留 2026-10-26 快照；server.py 可用时用 /api/big-v 按当日快讯重算。
+   所有动态内容都转义；不把外部新闻标题当作 HTML 插入。 */
+(function(){
+  const headlineEl=document.getElementById('bigVHeadline');
+  const metaEl=document.getElementById('bigVMeta');
+  const stepsEl=document.getElementById('bigVSteps');
+  const domainsEl=document.getElementById('bigVDomains');
+  const scenariosEl=document.getElementById('bigVScenarios');
+  const watchEl=document.getElementById('bigVWatch');
+  const refsEl=document.getElementById('bigVRefs');
+  const footEl=document.getElementById('bigVFoot');
+  const pillEl=document.getElementById('bigVPill');
+  if(!headlineEl || !metaEl || !stepsEl || !domainsEl || !scenariosEl) return;
+
+  function esc(s){
+    return String(s==null?'':s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+  function trunc(s,n){ s=String(s==null?'':s); return s.length>n ? s.slice(0,n-1)+'…' : s; }
+  function safeHref(url){
+    try{
+      const u=new URL(String(url||''),location.href);
+      return (u.protocol==='http:' || u.protocol==='https:') ? esc(u.href) : '#';
+    }catch(e){ return '#'; }
+  }
+  function arr(value){ return Array.isArray(value)?value:[]; }
+
+  function render(data){
+    if(!data || data.error) return;
+    const stamp=esc(data.as_of||'今日');
+    headlineEl.innerHTML=`<mark>${stamp} AI 推演</mark>${esc(data.headline||'')}`;
+    const counts=data.counts||{};
+    metaEl.innerHTML=`<span class="meta-tag">${esc(data.risk_label||'框架推演')}</span>`
+      + arr(data.themes).slice(0,3).map(t=>`<span class="meta-tag neutral">${esc(t)}</span>`).join('')
+      + `<span>当日 ${Number(counts.sources||0)} 源 / ${Number(counts.mentions||0)} 条相关标题 · ${esc(data.status||'')}</span>`;
+
+    stepsEl.innerHTML=arr(data.framework_steps).map(step=>(
+      `<div class="bigv-step"><span>${esc(step.no||'·')}</span><b>${esc(step.label||'')}</b>`
+      + `<small>${esc(step.question||step.output||'')}</small></div>`
+    )).join('');
+
+    const domainRows=arr(data.domains);
+    domainsEl.innerHTML=domainRows.length ? domainRows.map((d,i)=>{
+      const chain=arr(d.chain).map(x=>`<div class="bigv-chain">${esc(x)}</div>`).join('');
+      const evidence=arr(d.evidence).map(ev=>(
+        `<li>· <span class="ev-src">${esc(ev.source||'')}</span>｜${esc(trunc(ev.title,70))}</li>`
+      )).join('');
+      return `<article class="bigv-domain">`
+        + `<div class="bigv-domain-head"><span class="point-no">0${i+1}</span><b>${esc(d.label||'')}</b>`
+        + `<em>${esc((d.focus||[]).join(' · ')||'跨领域推演')}</em></div>`
+        + chain
+        + `<p>${esc(d.conclusion||'')}</p>`
+        + `<ul><li><b>激励：</b>${esc(d.incentive||'')}</li>`
+        + `<li><b>约束：</b>${esc(d.constraints||'')}</li></ul>`
+        + `<ul class="sector-evidence">${evidence||'<li>· 当日样本暂无该领域证据</li>'}</ul>`
+        + `</article>`;
+    }).join('') : '<article class="bigv-domain"><p>当日样本中没有可用于推演的政治 / 地缘 / 经济证据。</p></article>';
+
+    scenariosEl.innerHTML=arr(data.scenarios).map(s=>(
+      `<div class="bigv-scenario ${s.key==='escalation'?'press':''}">`
+      + `<div class="bigv-scenario-head"><b>${esc(s.label||'')}</b><span>关注度 ${Number(s.weight||0)}%</span></div>`
+      + `<p><b>触发：</b>${esc(s.trigger||'')}</p><p>${esc(s.chain||'')}</p>`
+      + `<small>观察：${esc(arr(s.watch).join(' · '))}</small></div>`
+    )).join('');
+
+    if(watchEl){
+      watchEl.innerHTML=`<b>推演必须被证伪的信号</b><ul>`
+        + arr(data.falsifiers).map(x=>`<li>${esc(x)}</li>`).join('')
+        + `</ul>`;
+    }
+    if(refsEl){
+      refsEl.innerHTML=`<b>框架与近期事实依据</b>`
+        + arr(data.references).map(ref=>(
+          `<a href="${safeHref(ref.url)}" target="_blank" rel="noopener noreferrer">${esc(ref.title||'资料')}</a>`
+        )).join(' · ');
+    }
+    if(footEl){
+      footEl.innerHTML=`<span>${esc(data.disclaimer||'')} ${esc(data.boundary||'')} `
+        + `${esc(data.scenario_weights_note||'')} 实时结果见 <code>/api/big-v</code>。</span>`;
+    }
+    if(pillEl) pillEl.textContent=`✦ ${esc(data.name||'预测历史')} · ${esc(data.risk_label||'框架推演')}`;
+  }
+
+  async function loadBigV(){
+    try{
+      const res=await fetch('api/big-v');
+      if(!res.ok) return;
+      const data=await res.json();
+      if(data && !data.error) render(data);
+    }catch(e){ /* 静态托管 / 离线：保留页面里的 2026-10-26 快照 */ }
+  }
+  loadBigV();
+  if(typeof refreshBtn!=='undefined' && refreshBtn){
+    refreshBtn.addEventListener('click', loadBigV);
+  }
+  window._bigVReload=loadBigV;
+})();
+
 /* ---- DeepSeek 全网搜索（2026-10-17 Search API）----
    表单走相对路径 api/search（浏览器不直连 api.deepseek.com，Key 只在服务端）。 */
 (function(){

@@ -10,6 +10,7 @@ POST /api/run 推送前闸门与 ``push_brief.py`` 相同：
 诊断：GET /api/market、GET /api/sensitive。
 
 DeepSeek Search & Fetch（2026-10-17 新 API，需 DEEPSEEK_API_KEY）：
+GET  /api/big-v（或 /api/bigv）「大 V 分析」结构化 AI 框架推演（政治 / 地缘 / 经济）
 GET  /api/deepseek/status 配置自检（不泄漏 Key）
 GET  /api/search?q=...&count=10&need_content=0 全网搜索
 POST /api/search {"query": ..., "count": ...} 同上
@@ -187,6 +188,14 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as error:
                 return self.send_json(HTTPStatus.OK, {"error": str(error)})
             return self.send_json(HTTPStatus.OK, sources.analyze_policy(brief, deep=deep))
+        if path in ("/api/big-v", "/api/bigv"):
+            # 「大 V 分析」：预测历史框架启发的政治 / 地缘 / 经济推演。
+            # 走 /api/brief 同一份缓存；离线时自动回退演示数据并在响应里注明证据强度。
+            try:
+                brief = get_brief()
+            except Exception as error:
+                return self.send_json(HTTPStatus.OK, {"error": str(error)})
+            return self.send_json(HTTPStatus.OK, sources.analyze_big_v(brief))
         if path == "/api/deepseek/status":
             # DeepSeek Search & Fetch 配置自检（2026-10-17 新 API）：不泄漏 Key，
             # 附全部已接入搜索的数据源清单，供页面状态与排障。

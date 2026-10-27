@@ -1416,7 +1416,7 @@ class BuildHtmlTest(unittest.TestCase):
             return out.index(f'<span class="tag">{label}</span>')
 
         order = ["AI 每日总结", "AI 看盘", "AI 情绪热力图", "AI 政策分析", "AI 政策深度",
-                 "AI 政策研报", "AI 板块机会", "全网快讯"]
+                 "AI 政策研报", "AI 板块机会", "大 V 分析", "全网快讯"]
         positions = [at(label) for label in order]
         self.assertEqual(positions, sorted(positions), "板块顺序应为 " + " → ".join(order))
         between = out[at("AI 每日总结"):at("AI 看盘")]

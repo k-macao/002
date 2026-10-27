@@ -1248,3 +1248,75 @@ footer strong { display: block; color: var(--ink); text-align: center; font-size
   .pixel-section { padding: 13px 12px 14px; border-radius: 14px; }
   .pixel-section-head h2 { font-size: 16px; }
 }
+
+/* ===================== 大 V 分析 · 预测历史框架启发的政治 / 地缘 / 经济推演 ===================== */
+.bigv-card { position: relative; }
+.bigv-notice {
+  padding: 9px 10px;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--green);
+  border-radius: 9px;
+  background: #fafafa;
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.72;
+}
+.bigv-notice b { color: var(--ink); }
+.bigv-headline {
+  margin: 11px 0 8px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.85;
+}
+.bigv-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 11px; color: var(--ink-soft); font-size: 10px; }
+.bigv-meta code, .bigv-refs code, .insight-foot code { font-family: var(--mono); font-size: 10px; }
+.bigv-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-bottom: 12px; }
+.bigv-step {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  background: #fafafa;
+}
+.bigv-step span { display: inline-block; padding: 1px 5px; background: var(--green); color: var(--black); border-radius: 3px; font-size: 9px; font-weight: 800; }
+.bigv-step b { display: block; margin-top: 6px; color: var(--ink); font-size: 11px; }
+.bigv-step small { display: block; margin-top: 3px; color: var(--ink-soft); font-size: 10px; line-height: 1.6; }
+.bigv-domains { display: grid; grid-template-columns: 1fr; gap: 9px; }
+.bigv-domain { padding: 10px 11px; border: 1px solid var(--rule); border-radius: 11px; background: #fafafa; }
+.bigv-domain-head { display: flex; align-items: baseline; gap: 7px; }
+.bigv-domain-head .point-no { color: var(--gray); font-size: 10px; font-weight: 800; }
+.bigv-domain-head b { color: var(--ink); font-size: 13px; }
+.bigv-domain-head em { color: var(--ink-soft); font-size: 10px; font-style: normal; }
+.bigv-chain { margin-top: 6px; padding: 4px 7px; background: var(--green); color: var(--black); border-radius: 5px; font-size: 10px; font-weight: 800; }
+.bigv-domain p { margin: 8px 0; color: var(--ink); font-size: 11.5px; line-height: 1.78; }
+.bigv-domain ul { margin: 6px 0 0; padding-left: 17px; }
+.bigv-domain > ul:not(.sector-evidence) li { padding: 2px 0; color: var(--ink-soft); font-size: 11px; line-height: 1.7; }
+.bigv-domain > ul:not(.sector-evidence) b { color: var(--ink); }
+.bigv-scenarios { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-top: 11px; }
+.bigv-scenario { padding: 9px; border: 1px solid var(--rule); border-top: 3px solid var(--green); border-radius: 9px; background: #fff; }
+.bigv-scenario.press { border-top-color: var(--gray-dark); }
+.bigv-scenario-head { display: flex; justify-content: space-between; gap: 6px; align-items: baseline; }
+.bigv-scenario-head b { color: var(--ink); font-size: 11px; }
+.bigv-scenario-head span { color: var(--ink-soft); font-size: 10px; white-space: nowrap; }
+.bigv-scenario p { margin: 6px 0; color: var(--ink); font-size: 10.5px; line-height: 1.7; }
+.bigv-scenario small { color: var(--ink-soft); font-size: 9.5px; line-height: 1.6; }
+.bigv-watch { margin-top: 11px; padding: 9px 11px; border: 1px solid var(--rule); border-radius: 10px; background: #fff; }
+.bigv-watch > b { color: var(--ink); font-size: 11px; }
+.bigv-watch ul { margin: 5px 0 0; padding-left: 17px; }
+.bigv-watch li { color: var(--ink-soft); font-size: 10.5px; line-height: 1.75; }
+.bigv-refs { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--rule); color: var(--ink-soft); font-size: 10px; line-height: 1.8; }
+.bigv-refs > b { display: block; color: var(--ink); font-size: 10px; }
+.bigv-refs a { color: var(--ink); text-decoration: none; border-bottom: 1px dotted var(--gray); }
+.bigv-refs a:hover { background: var(--green); }
+
+@media (max-width: 760px) {
+  .bigv-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bigv-scenarios { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) {
+  .bigv-steps { grid-template-columns: 1fr; }
+  .bigv-domain { padding: 9px; }
+  .bigv-notice, .bigv-headline { font-size: 11.5px; }
+  .bigv-scenario-head { flex-direction: column; }
+}
