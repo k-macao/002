@@ -601,6 +601,19 @@ class QuantDailyWiringTest(_NewsCardOn, unittest.TestCase):
         self.assertLess(out.index('<span class="tag">AI 量化日报</span>'),
                         out.index('<span class="tag">全网快讯</span>'))
 
+    def test_quant_card_leads_the_body(self):
+        # 「AI 量化日报」是正文第一张卡片：只在刊头之后、其它任何栏目之前。
+        out = sources.build_html(self._brief())
+        quant_at = out.index('<span class="tag">AI 量化日报</span>')
+        self.assertLess(out.index("章鱼 AI·全景分析"), quant_at)      # 刊头仍在最前
+        for label in ("AI 每日总结", "AI 看盘", "AI 情绪热力图", "AI 政策分析",
+                      "AI 板块机会", "大 V 分析"):
+            self.assertGreater(out.index(f'<span class="tag">{label}</span>'), quant_at, label)
+        # 刊头与量化卡之间不夹别的卡片
+        # 刊头与量化卡之间不夹别的卡片（between 末尾正好是量化卡自己的开标签）
+        between = out[out.index("章鱼 AI·全景分析"):quant_at]
+        self.assertEqual(between.count('<div class="card">'), 1)
+
     def test_quant_card_accepts_injected_report(self):
         import quant_daily
         report = quant_daily.daily(demo=True, as_of=quant_daily.DEMO_AS_OF)
@@ -1498,8 +1511,9 @@ class BuildHtmlTest(_NewsCardOn, unittest.TestCase):
         def at(label: str) -> int:
             return out.index(f'<span class="tag">{label}</span>')
 
-        order = ["AI 每日总结", "AI 看盘", "AI 情绪热力图", "AI 政策分析", "AI 政策深度",
-                 "AI 政策研报", "AI 板块机会", "大 V 分析", "AI 量化日报", "全网快讯"]
+        # 「AI 量化日报」放最开头（紧随刊头），其后才是叙事型栏目。
+        order = ["AI 量化日报", "AI 每日总结", "AI 看盘", "AI 情绪热力图", "AI 政策分析",
+                 "AI 政策深度", "AI 政策研报", "AI 板块机会", "大 V 分析", "全网快讯"]
         positions = [at(label) for label in order]
         self.assertEqual(positions, sorted(positions), "板块顺序应为 " + " → ".join(order))
         between = out[at("AI 每日总结"):at("AI 看盘")]
