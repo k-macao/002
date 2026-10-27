@@ -7,7 +7,7 @@
   <meta name="author" content="章鱼 ai" />
   <meta name="theme-color" content="#ffffff" />
   <title>章鱼 AI·全景分析（对冲组合002）</title>
-  <link rel="stylesheet" href="styles.css?v=20261026" />
+  <link rel="stylesheet" href="styles.css?v=20261027" />
 </head>
 <body>
   <div class="crt-overlay" aria-hidden="true"></div>
@@ -621,6 +621,156 @@
           <a href="https://www.newsquawk.com/headlines/newsquawk-daily-us-opening-news---26th-october-2026" target="_blank" rel="noopener noreferrer">Newsquawk 10/26</a>
         </div>
         <div class="insight-foot" id="bigVFoot"><span>方法边界：历史类比只生成假设；“情景关注度”不是统计概率或投资建议。页面静态快照为 2026-10-26；服务运行时按当日抓取标题重算，实时结果见 <code>/api/big-v</code>。</span></div>
+      </article>
+    </section>
+
+    <section class="pixel-section" id="quantDailySection" data-column="量化日报">
+      <div class="pixel-section-head">
+        <div><h2>AI 量化日报</h2></div>
+        <span class="ai-pill" id="quantPill">15:30 采集 · 16:00 交付</span>
+      </div>
+      <article class="insight-card quant-card">
+        <div class="quant-notice">
+          <b>面向 AI Agent 的日频量化日报</b>：五步流程拆成 <b>41 个原子动作</b>，每个动作对应一次工具调用；
+          A 股交易日 15:30 自动启动、16:00 前产出标准 Markdown 并按 <code>YYYYMMDD_量化交易日报.md</code> 归档，
+          港股 / 美股按各自收盘时间平移。当日拿不到的指标一律写「数据暂缺」并标 ⚠️，不用前值或估计值顶替。
+        </div>
+        <p class="quant-summary" id="quantSummary"><mark>核心结论 · 2026-10-26</mark>2026-10-26，指数集体收涨，中证1000 +1.88% 领跑，五维：基本面中性·配置中性·阿尔法看多·贝塔看多·另类看多，权益仓位 59%（+1pct），风险 高1/中0</p>
+        <div class="quant-meta" id="quantMeta">
+          <span class="meta-tag">数据完整度 100%</span>
+          <span class="meta-tag neutral">五维 3 看多 · 2 中性</span>
+          <span class="meta-tag">权益仓位 59%</span>
+          <span>静态快照 2026-10-26（示例数据包）；服务运行时由 <code>/api/quant</code> 按当日数据重算</span>
+        </div>
+        <div class="quant-steps" id="quantTimeline">
+          <div class="quant-step"><span>1</span><b>前置数据采集</b><small>T 日 15:30 → 15:35（5 分钟内） · 8 个动作</small></div>
+          <div class="quant-step"><span>2</span><b>五维量化分析</b><small>15:35 → 15:50（15 分钟） · 20 个动作</small></div>
+          <div class="quant-step"><span>3</span><b>明日策略信号</b><small>15:50 → 15:55（5 分钟） · 5 个动作</small></div>
+          <div class="quant-step"><span>4</span><b>风险预警识别</b><small>15:55 → 15:57（2 分钟） · 4 个动作</small></div>
+          <div class="quant-step"><span>5</span><b>日报组装归档</b><small>15:57 → 16:00（3 分钟） · 4 个动作</small></div>
+        </div>
+        <div class="quant-dims" id="quantDims">
+          <article class="quant-dim">
+            <div class="quant-dim-head"><span class="point-no">1</span><b>基本面量化</b><em class="neutral">中性</em></div>
+            <p class="quant-dim-focus">业绩驱动方向、估值修复空间</p>
+            <ul>
+              <li><span>业绩披露 / 预告</span><b>10 家</b><small>超预期 5 · 符合 2 · 不及 3</small></li>
+              <li><span>净利润增速 &gt;50%</span><b>5 家</b><small>示例A、示例B、示例C</small></li>
+              <li><span>净利润下滑 &gt;30%</span><b>3 家</b><small>示例J、示例I、示例H</small></li>
+              <li><span>沪深300 PE / PB</span><b>13.42 / 1.48</b><small>58% 分位 · 合理</small></li>
+            </ul>
+            <p class="quant-dim-note">业绩结构：超预期 5 家 / 符合 2 家 / 不及预期 3 家，超预期占比 50%</p>
+          </article>
+          <article class="quant-dim">
+            <div class="quant-dim-head"><span class="point-no">2</span><b>资产配置量化</b><em class="neutral">中性</em></div>
+            <p class="quant-dim-focus">大类资产性价比排序、仓位调整方向</p>
+            <ul>
+              <li><span>大类资产当日排序</span><b>商品 +0.86% &gt; 股票 +0.62% &gt; 黄金 +0.42% &gt; 债券 +0.20% &gt; 现金 +0.01%</b><small>共 5 类资产有当日收益</small></li>
+              <li><span>沪深300 盈利收益率</span><b>7.45%</b><small>10Y 国债 1.82%</small></li>
+              <li><span>股债性价比</span><b>+5.63%</b><small>历史 78.3% 分位 · 股票占优</small></li>
+              <li><span>风险平价 · 股票目标仓位</span><b>21.1%</b><small>较上日 -24.9pct</small></li>
+            </ul>
+            <p class="quant-dim-note">当日收益排序：商品 +0.86% &gt; 股票 +0.62% &gt; 黄金 +0.42% &gt; 债券 +0.20% &gt; 现金 +0.01%</p>
+          </article>
+          <article class="quant-dim">
+            <div class="quant-dim-head"><span class="point-no">3</span><b>阿尔法量化</b><em class="">看多</em></div>
+            <p class="quant-dim-focus">当日有效因子、超额环境优劣、对冲成本变化</p>
+            <ul>
+              <li><span>因子收益排序</span><b>动量 +0.62% &gt; 成长 +0.48% &gt; 质量 +0.21% &gt; 价值 -0.18% &gt; 换手率 -0.36% &gt; 波动率 -0.54%</b><small>有效因子：动量、成长</small></li>
+              <li><span>指增平均超额</span><b>中证500 +0.15% / 中证1000 +0.22%</b><small>均值 +0.18%</small></li>
+              <li><span>IF / IC / IM 年化贴水</span><b>IF -2.40% / IC -5.80% / IM -8.60%</b><small>对冲成本偏高</small></li>
+            </ul>
+            <p class="quant-dim-note">有效因子：动量 +0.62%、成长 +0.48%；失效因子：换手率 -0.36%、波动率 -0.54%</p>
+          </article>
+          <article class="quant-dim">
+            <div class="quant-dim-head"><span class="point-no">4</span><b>贝塔量化</b><em class="">看多</em></div>
+            <p class="quant-dim-focus">占优风格、关注 / 规避行业、主题交易热度</p>
+            <ul>
+              <li><span>大盘 − 小盘</span><b>-1.31%</b><small>近 5 日累计剪刀差 -3.74%</small></li>
+              <li><span>价值 − 成长</span><b>-1.54%</b><small>近 5 日累计 -3.35%</small></li>
+              <li><span>强势行业 TOP5</span><b>半导体 +3.42%、通信 +2.86%、有色金属 +2.31%、计算机 +1.94%、国防军工 +1.62%</b></li>
+              <li><span>弱势行业 TOP5</span><b>公用事业 -2.14%、煤炭 -1.86%、房地产 -1.48%、食品饮料 -1.12%、银行 -0.84%</b></li>
+            </ul>
+            <p class="quant-dim-note">风格：大盘 − 小盘 -1.31%，价值 − 成长 -1.54%，占优风格 小盘 · 成长</p>
+          </article>
+          <article class="quant-dim">
+            <div class="quant-dim-head"><span class="point-no">5</span><b>另类量化</b><em class="">看多</em></div>
+            <p class="quant-dim-focus">情绪驱动方向、资金异动标的、事件性机会</p>
+            <ul>
+              <li><span>舆情热度 TOP10</span><b>算力 96、半导体 91、黄金 84、机器人 78、白酒 66</b><small>最高热度 96 · 10 个关键词有样本</small></li>
+              <li><span>龙虎榜机构净买入 TOP3</span><b>示例甲 +4.82 亿、示例乙 +3.15 亿、示例丙 +2.46 亿</b><small>连续上榜 2 只</small></li>
+              <li><span>知名游资净买入 TOP3</span><b>示例己 +2.86 亿、示例庚 +2.10 亿、示例辛 +1.64 亿</b><small>连续上榜 2 只</small></li>
+              <li><span>重要事件</span><b>3 条</b><small>强影响 1 条</small></li>
+            </ul>
+            <p class="quant-dim-note">舆情：热度 TOP3 为 算力（96，升温）、半导体（91，升温）、黄金（84，持平），TOP10 中升温 4 个、降温 3 个</p>
+          </article>
+        </div>
+        <table class="quant-table" id="quantStrategy">
+          <tr><th>策略</th><th>信号</th><th>动作</th></tr>
+          <tr><td>指数增强</td><td>中性</td><td>加仓动量 / 成长暴露<small>当日估算超额 中证500 +0.15% / 中证1000 +0.22%，均值 +0.18%。 因子暴露：提高 动量（+0.62%）、成长（+0.48%），压低 波动率（-0.54%）；单因子偏离不超过组合跟踪误差预算的 30%。</small></td></tr>
+          <tr><td>市场中性</td><td>中性</td><td>用 IF 维持满额对冲<small>主力合约年化贴水：IF -2.40%、IC -5.80%、IM -8.60%。成本最低为 IF（-2.40%），当前对冲成本偏低。 对冲成本低，适合把敞口压满以锁定选股超额。</small></td></tr>
+          <tr><td>贝塔轮动</td><td>看多</td><td>超配 半导体、通信<small>占优风格 小盘 · 成长。配置 半导体、通信，规避 公用事业、煤炭；主题侧优先 算力硬件（强）。纪律：单一行业上限 20%，组合止盈 +10%、止损 −5%，指数单日 −2.5% 触发整体减仓 10pct。</small></td></tr>
+          <tr><td>事件驱动</td><td>看多</td><td>关注池 半导体（半导体设备招标落地）、有色金属（黄金配置需求回升）、示例A（业绩 +132.0%）、示例B（业绩 +96.5%）<small>明日关注：半导体（半导体设备招标落地）、有色金属（黄金配置需求回升）、示例A（业绩 +132.0%）、示例B（业绩 +96.5%）、示例C（业绩 +78.2%）、算力（舆情 96）、半导体（舆情 91）。事件驱动仓位不超过总权益 15%，单标的不超过 5%，事件兑现即减。</small></td></tr>
+          <tr><td>总仓位</td><td>中性</td><td>权益仓位中枢 <b>59%</b>（较上一日 +1pct）<small>五维加权 +0.29（基本面中性、配置中性、阿尔法看多、贝塔看多、另类看多）</small></td></tr>
+        </table>
+        <ul class="quant-risks" id="quantRisks">
+          <li><b>⚠️ 风格极端化（高）</b>小盘风格已连续 5 日占优</li>
+        </ul>
+        <details class="quant-actions" id="quantActions">
+          <summary>41 个原子动作 · 工具调用映射（点击展开）</summary>
+          <table class="quant-action-table">
+            <tr><th>编号</th><th>动作</th><th>工具</th><th>产出</th></tr>
+            <tr class="quant-action-group"><td colspan="4">步骤 1 · 前置数据采集　<small>T 日 15:30 → 15:35（5 分钟内） · 批量拉取 T 日收盘数据并完成校验，缺项切备用源</small></td></tr>
+            <tr><td>S1-01</td><td>市场全景快照</td><td><code>market.snapshot</code></td><td>沪深300 / 中证500 / 中证1000 涨跌幅、全市场成交额、涨跌家数、涨跌停数</td></tr>
+            <tr><td>S1-02</td><td>行业与风格切片</td><td><code>industry.sw1_returns</code></td><td>申万一级行业涨跌幅；大小盘、价值成长风格指数收益差</td></tr>
+            <tr><td>S1-03</td><td>业绩披露清单</td><td><code>fundamental.filings</code></td><td>当日财报 / 业绩预告（净利润增速、是否超预期）</td></tr>
+            <tr><td>S1-04</td><td>估值与一致预期</td><td><code>fundamental.valuation</code></td><td>核心指数 PE / PB 近 10 年分位；行业一致预期增速环比变动</td></tr>
+            <tr><td>S1-05</td><td>资金三件套</td><td><code>flow.north_margin_lhb</code></td><td>北向净流入、两融余额变动、龙虎榜净买卖 TOP 标的</td></tr>
+            <tr><td>S1-06</td><td>大类资产快照</td><td><code>macro.cross_asset</code></td><td>10Y 国债收益率、南华商品指数、黄金现货、美元兑人民币中间价</td></tr>
+            <tr><td>S1-07</td><td>舆情与事件</td><td><code>alt.news_sentiment</code></td><td>财经热点事件、个股舆情热度排名</td></tr>
+            <tr><td>S1-08</td><td>数据校验与切源</td><td><code>pipeline.validate</code></td><td>缺失项清单、异常值复核标记、实际使用的数据源</td></tr>
+            <tr class="quant-action-group"><td colspan="4">步骤 2 · 五维量化分析　<small>15:35 → 15:50（15 分钟） · 基本面 / 资产配置 / 阿尔法 / 贝塔 / 另类，各出一张表和一句结论</small></td></tr>
+            <tr><td>S2-01</td><td>业绩异动分类</td><td><code>analysis.earnings_split</code></td><td>超预期 / 符合 / 不及预期分类；净利润增速 &gt;50%、下滑 &gt;30% 各 TOP10</td></tr>
+            <tr><td>S2-02</td><td>估值分位表</td><td><code>analysis.valuation_table</code></td><td>沪深300 / 中证500 / 中证1000 的 PE、PB 与近 10 年分位、估值区间</td></tr>
+            <tr><td>S2-03</td><td>景气度变动</td><td><code>analysis.consensus_delta</code></td><td>申万一级行业一致预期盈利增速环比，提升 / 下滑 TOP5</td></tr>
+            <tr><td>S2-04</td><td>基本面结论</td><td><code>analysis.conclusion</code></td><td>业绩驱动方向、估值修复空间、看多 / 中性 / 看空</td></tr>
+            <tr><td>S2-05</td><td>大类资产收益排序</td><td><code>allocation.asset_returns</code></td><td>股票 / 债券 / 商品 / 黄金 / 现金当日收益 + 近 1 周 / 近 1 月累计</td></tr>
+            <tr><td>S2-06</td><td>股债性价比</td><td><code>allocation.equity_bond</code></td><td>沪深300 盈利收益率 − 10Y 国债收益率、历史分位、配置偏向</td></tr>
+            <tr><td>S2-07</td><td>风险平价仓位</td><td><code>allocation.risk_parity</code></td><td>股票 / 债券 / 商品 / 现金目标仓位，与上一日对比</td></tr>
+            <tr><td>S2-08</td><td>配置结论</td><td><code>analysis.conclusion</code></td><td>大类资产性价比排序、仓位调整方向</td></tr>
+            <tr><td>S2-09</td><td>因子收益</td><td><code>alpha.factor_returns</code></td><td>价值 / 成长 / 动量 / 波动率 / 换手率 / 质量六因子当日收益与排名</td></tr>
+            <tr><td>S2-10</td><td>指增超额估算</td><td><code>alpha.excess_estimate</code></td><td>头部指增产品当日超额、市场平均超额水平</td></tr>
+            <tr><td>S2-11</td><td>对冲成本</td><td><code>alpha.basis</code></td><td>年化贴水率、对冲成本高低判断</td></tr>
+            <tr><td>S2-12</td><td>阿尔法结论</td><td><code>analysis.conclusion</code></td><td>当日有效因子、超额环境优劣、对冲成本变化</td></tr>
+            <tr><td>S2-13</td><td>风格剪刀差</td><td><code>beta.style_spread</code></td><td>大盘−小盘、价值−成长当日收益差、占优风格、近 5 日趋势</td></tr>
+            <tr><td>S2-14</td><td>行业强弱</td><td><code>beta.industry_rank</code></td><td>申万一级行业按涨跌幅、成交额增速排序，强弱各 TOP5</td></tr>
+            <tr><td>S2-15</td><td>主题资金强度</td><td><code>beta.theme_strength</code></td><td>热点主题成交额占比、涨停家数、持续性等级（强 / 中 / 弱）</td></tr>
+            <tr><td>S2-16</td><td>贝塔结论</td><td><code>analysis.conclusion</code></td><td>占优风格、关注 / 规避行业、主题交易热度</td></tr>
+            <tr><td>S2-17</td><td>舆情热度榜</td><td><code>alt.sentiment_rank</code></td><td>全市场舆情热度 TOP10、热度变动方向、驱动事件</td></tr>
+            <tr><td>S2-18</td><td>龙虎榜席位</td><td><code>alt.lhb_seats</code></td><td>机构净买入 TOP5、知名游资净买入 TOP5、连续上榜标记</td></tr>
+            <tr><td>S2-19</td><td>政策事件评估</td><td><code>alt.event_impact</code></td><td>重要政策 / 行业事件及对板块影响等级（强 / 中 / 弱）</td></tr>
+            <tr><td>S2-20</td><td>另类结论</td><td><code>analysis.conclusion</code></td><td>情绪驱动方向、资金异动标的、事件性机会提示</td></tr>
+            <tr class="quant-action-group"><td colspan="4">步骤 3 · 明日策略信号　<small>15:50 → 15:55（5 分钟） · 把五维结论翻译成可执行的分策略指引，每条都带数值</small></td></tr>
+            <tr><td>S3-01</td><td>指数增强指引</td><td><code>strategy.index_enhance</code></td><td>当日超额估算、因子暴露调整方向（加 / 减哪个因子）</td></tr>
+            <tr><td>S3-02</td><td>市场中性指引</td><td><code>strategy.market_neutral</code></td><td>对冲成本、基差操作建议、最优对冲合约</td></tr>
+            <tr><td>S3-03</td><td>贝塔轮动指引</td><td><code>strategy.beta_rotation</code></td><td>明日推荐风格 / 行业、建议仓位、止盈止损位</td></tr>
+            <tr><td>S3-04</td><td>事件驱动池</td><td><code>strategy.event_pool</code></td><td>明日可关注的业绩 / 政策 / 舆情标的池</td></tr>
+            <tr><td>S3-05</td><td>总仓位中枢</td><td><code>strategy.position</code></td><td>权益仓位中枢 0~100%，对比上一日变动</td></tr>
+            <tr class="quant-action-group"><td colspan="4">步骤 4 · 风险预警识别　<small>15:55 → 15:57（2 分钟） · 四条规则自动跑，命中即高亮，未命中也要明说</small></td></tr>
+            <tr><td>S4-01</td><td>极端波动</td><td><code>risk.extreme_move</code></td><td>指数单日 |涨跌幅| ≥ 2%、成交额环比异常放大 / 萎缩</td></tr>
+            <tr><td>S4-02</td><td>流动性风险</td><td><code>risk.liquidity</code></td><td>北向单日净流出 &gt; 50 亿、两融余额大幅下降</td></tr>
+            <tr><td>S4-03</td><td>风格极端化</td><td><code>risk.style_extreme</code></td><td>单一风格连续 5 日占优、行业分化度 &gt; 历史 90% 分位</td></tr>
+            <tr><td>S4-04</td><td>事件风险</td><td><code>risk.event</code></td><td>重大政策利空、外围市场大幅波动等外部冲击</td></tr>
+            <tr class="quant-action-group"><td colspan="4">步骤 5 · 日报组装归档　<small>15:57 → 16:00（3 分钟） · 按模板填充、压出 100 字摘要、按日期归档、异常项打标</small></td></tr>
+            <tr><td>S5-01</td><td>模板填充</td><td><code>report.render</code></td><td>标准 Markdown 日报（含市场全景、五维、策略、风险四段）</td></tr>
+            <tr><td>S5-02</td><td>摘要压缩</td><td><code>report.summary</code></td><td>100 字以内精简结论，置于文档顶部</td></tr>
+            <tr><td>S5-03</td><td>归档</td><td><code>report.archive</code></td><td>reports/YYYYMMDD_量化交易日报.md</td></tr>
+            <tr><td>S5-04</td><td>异常打标与日志</td><td><code>report.mark</code></td><td>⚠️ 异常项、✅ 核心信号，以及本次实际使用的数据源</td></tr>
+          </table>
+        </details>
+        <div class="insight-foot"><span>五维评分、仓位公式与风险阈值全部写死在 <code>quant_daily.SCORING</code> / <code>RISK_RULES</code>，
+          同输入必然同输出；信号只有看多 / 中性 / 看空三档。数据源主备切换与兜底规则见 <code>docs/quant_daily.md</code>，
+          归档目录 <code>reports/</code>。日报为规则引擎产物，不构成投资建议。</span></div>
       </article>
     </section>
 

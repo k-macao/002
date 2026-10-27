@@ -41,6 +41,7 @@ from urllib.request import Request, urlopen
 import deepseek_search
 import hallmark_deai
 import humanizer_zh
+import quant_daily
 import sensitive
 import sources
 
@@ -67,6 +68,9 @@ _HALLMARK_CACHE: dict = {"at": 0.0, "payload": None}
 _HALLMARK_TTL = 30
 _HUMANIZER_CACHE: dict = {"at": 0.0, "payload": None}
 _HUMANIZER_TTL = 30
+# /api/quant 的日报缓存：五维分析本身是纯计算，但会带一次行情抓取（已另有 5 分钟缓存）。
+_QUANT_CACHE: dict = {"at": 0.0, "payload": None, "key": None}
+_QUANT_TTL = 60
 
 
 def _read_surface(name: str) -> str:
@@ -289,6 +293,39 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as error:
                 return self.send_json(HTTPStatus.OK, {"error": str(error)})
             return self.send_json(HTTPStatus.OK, sources.analyze_big_v(brief))
+        if path == "/api/quant":
+            # 「AI 量化日报」：五维分析 + 策略信号 + 风险 + 100 字摘要 + 41 个原子动作方案。
+            # ?demo=1 用内置示例数据包（离线预览模板）；?format=markdown 直接返回归档用 Markdown；
+            # ?date=YYYY-MM-DD 指定交易日（非交易日返回 status=skipped）。
+            qs = parse_qs(query)
+            demo = (qs.get("demo") or [""])[0].strip().lower() in ("1", "true", "yes", "on")
+            fmt = (qs.get("format") or ["json"])[0].strip().lower()
+            as_of = (qs.get("date") or [""])[0].strip() or None
+            cache_key = (as_of, demo)
+            now = time.time()
+            cached = _QUANT_CACHE["payload"]
+            if (cached is not None and _QUANT_CACHE["key"] == cache_key
+                    and now - _QUANT_CACHE["at"] < _QUANT_TTL):
+                report = cached
+            else:
+                try:
+                    if demo:
+                        report = quant_daily.daily(as_of=as_of, demo=True)
+                    elif not quant_daily.trading_day(as_of)["is_trading_day"]:
+                        # 非交易日先判掉：不必为了「无日报」去抓行情和 69 个快讯源。
+                        report = quant_daily.daily(as_of=as_of)
+                    else:
+                        payload = get_market()
+                        brief = get_brief()
+                        report = quant_daily.daily(as_of=as_of,
+                                                   market=payload["market"], brief=brief)
+                except Exception as error:
+                    return self.send_json(HTTPStatus.OK, {"error": str(error)})
+                _QUANT_CACHE.update({"at": now, "payload": report, "key": cache_key})
+            if fmt in ("markdown", "md"):
+                return self.send_text(HTTPStatus.OK, report.get("markdown") or report.get("summary", ""),
+                                      "text/markdown; charset=utf-8")
+            return self.send_json(HTTPStatus.OK, report)
         if path in ("/api/hallmark", "/api/deai"):
             # 去 AI 味体检：规则取自 Nutlope/hallmark（MIT）。
             # ?surface=push|page|all，?mode=polish|audit|off（仅报告里回显请求模式）。
@@ -544,6 +581,14 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json(HTTPStatus.BAD_GATEWAY, {"message": f"PushPlus 请求失败：{error}"})
 
         return self.send_json(HTTPStatus.OK, {"message": "简报已推送至 PushPlus"})
+
+    def send_text(self, status, body: str, content_type: str = "text/plain; charset=utf-8"):
+        payload = body.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
 
     def send_json(self, status, data):
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")

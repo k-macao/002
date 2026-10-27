@@ -537,6 +537,39 @@ class HKEtfPairTest(unittest.TestCase):
         self.assertIn("CNY 83599.HK", heatmap)
 
 
+class QuantDailyWiringTest(unittest.TestCase):
+    """「AI 量化日报」接入推送：卡片必须存在、位置在快讯之前、内容不编数。"""
+
+    def _brief(self):
+        return {"金十数据": [{"title": "半导体板块大涨，算力需求旺盛", "url": ""}]}
+
+    def test_build_html_renders_quant_card(self):
+        out = sources.build_html(self._brief())
+        self.assertIn('<span class="tag">AI 量化日报</span>', out)
+        self.assertIn("权益仓位中枢", out)
+        self.assertIn("数据完整度", out)
+        self.assertLess(out.index('<span class="tag">AI 量化日报</span>'),
+                        out.index('<span class="tag">全网快讯</span>'))
+
+    def test_quant_card_accepts_injected_report(self):
+        import quant_daily
+        report = quant_daily.daily(demo=True, as_of=quant_daily.DEMO_AS_OF)
+        out = sources.build_html(self._brief(), quant=report)
+        self.assertIn("2026-10-26，指数集体收涨", out)
+        self.assertIn("2026-10-26", out)
+
+    def test_quant_card_degrades_without_breaking_push(self):
+        # 量化模块抛出异常时，推送仍要发得出去（只是不出这张卡）。
+        original = sources._quant_report
+        sources._quant_report = lambda brief, review: None
+        try:
+            out = sources.build_html(self._brief())
+            self.assertNotIn('<span class="tag">AI 量化日报</span>', out)
+            self.assertIn('<span class="tag">全网快讯</span>', out)
+        finally:
+            sources._quant_report = original
+
+
 class SectorOpportunityTest(unittest.TestCase):
     """「AI 板块机会」板块：机会方向（净多头 Top 4）/ 承压方向（净空头 Top 2）+ 支撑证据。"""
 
@@ -1416,7 +1449,7 @@ class BuildHtmlTest(unittest.TestCase):
             return out.index(f'<span class="tag">{label}</span>')
 
         order = ["AI 每日总结", "AI 看盘", "AI 情绪热力图", "AI 政策分析", "AI 政策深度",
-                 "AI 政策研报", "AI 板块机会", "大 V 分析", "全网快讯"]
+                 "AI 政策研报", "AI 板块机会", "大 V 分析", "AI 量化日报", "全网快讯"]
         positions = [at(label) for label in order]
         self.assertEqual(positions, sorted(positions), "板块顺序应为 " + " → ".join(order))
         between = out[at("AI 每日总结"):at("AI 看盘")]

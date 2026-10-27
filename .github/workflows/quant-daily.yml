@@ -1,0 +1,51 @@
+name: 量化日报 · AI Agent 日频执行
+
+# 面向 AI Agent 的日频量化日报：交易日收盘后自动跑一遍，产出标准 Markdown 并写 Step Summary。
+# 口径与阈值见 docs/quant_daily.md，引擎见 quant_daily.py。
+on:
+  schedule:
+    # GitHub Actions 使用 UTC；北京时间 = UTC+8。
+    # 07:35 UTC = 15:35 北京时间：A 股 15:00 收盘后 35 分钟，留出数据落库时间。
+    - cron: "35 7 * * 1-5"
+  workflow_dispatch: # 支持手动触发（可只跑示例：见 steps 里的说明）
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 回归测试
+        run: python3 test_quant_daily.py
+
+      - name: 生成日报
+        # 只依赖标准库与公开行情接口；拿不到的数据会写「数据暂缺」，不会中断。
+        # 想先看模板效果，可把下一行换成：python3 quant_daily.py --demo --no-archive
+        run: python3 quant_daily.py --out reports
+
+      - name: 写入 Step Summary
+        if: always()
+        run: |
+          echo "## 核心结论速览" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          python3 quant_daily.py --summary --no-archive >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "完整日报见 artifacts（reports/）或 \`GET /api/quant?format=markdown\`。" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 上传日报
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quant-daily-report
+          path: reports/*.md
+          if-no-files-found: warn
+          retention-days: 30
