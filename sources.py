@@ -5080,6 +5080,9 @@ PUSHPLUS_MEMBER_DEFAULT = True          # 默认按 10 万字口径出全量内�
 # 正文末尾「全网快讯」列表：每个数据源固定保留 3 条，只显示标题、不标注来源（隐藏源头）。
 # 推送字符上限不够时由 build_html() 自动收敛到 2 条 / 1 条，最后整段省略，保证发得出去。
 NEWS_ITEMS_PER_SOURCE = 3
+# 卡片开关：2026-10-27 起按需求**隐藏**「全网快讯」卡片（原始快讯照常抓取，各分析栏目
+# 仍用它们统计信号）。改回 True 即恢复，卡片逻辑与测试都保留，不用重写。
+NEWS_CARD_ENABLED = False
 
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -5178,7 +5181,9 @@ def build_html(
     不展示监测平台清单、时间核对或推送协议说明。
     **「AI 量化日报」卡片**排在「大 V 分析」之后、「全网快讯」之前（见 :func:`_quant_report`）：
     五维信号 + 权益仓位中枢 + 风险摘要；``quant`` 参数可注入已算好的报表，字符额度极紧时整段省略。
-    **正文最后（免责声明与作者署名之前）追加「全网快讯」列表**：每个数据源固定保留
+    **「全网快讯」列表默认已隐藏**（``NEWS_CARD_ENABLED = False``，2026-10-27 起）：卡片逻辑保留，
+    打开开关后仍按下面的口径输出；隐藏期间原始快讯照常抓取，供各分析栏目统计信号。
+    原来的口径是：**正文最后（免责声明与作者署名之前）追加「全网快讯」列表**：每个数据源固定保留
     :data:`NEWS_ITEMS_PER_SOURCE`（3）条，按源顺序取每源前 3 条并跨源去重，
     **只列标题、不标注来源（隐藏源头）**；``max_length`` 不够时自动收敛到每源 2 / 1 条，
     最后整段省略，保证推送始终在 PushPlus 字符上限内。
@@ -5977,8 +5982,9 @@ f'<div class="ftr">近30日只统计已核验发文日的全球政策，已观�
         # ``max_per_src`` 为本次容量口径允许的每源条数，快讯列表最多 3 条，
         # 容量不够时随收敛档位降到 2 / 1 条，为 0 时整段省略。
         # ``deep_level``：2 = 政策深度层全量（含思维导图与背景知识长文），1 = 精简，0 = 整段省略。
-        per_source = (NEWS_ITEMS_PER_SOURCE if max_per_src is None
-                      else min(max_per_src, NEWS_ITEMS_PER_SOURCE))
+        per_source = 0 if not NEWS_CARD_ENABLED else (
+            NEWS_ITEMS_PER_SOURCE if max_per_src is None
+            else min(max_per_src, NEWS_ITEMS_PER_SOURCE))
         policy_deep_cards = ((_render_policy_deep(deep_level) + _render_policy_research(deep_level))
                              if deep_level > 0 else "")
         heatmap_card = _render_heatmap(deep_level)
@@ -6007,8 +6013,11 @@ f'<div class="ftr">近30日只统计已核验发文日的全球政策，已观�
     # 容量收敛顺序：先降「政策深度 / 政策研报 / 大 V 分析」的派生内容，再逐级收敛快讯列表，
     # 最后才整段省略快讯——「AI 每日总结 / 看盘 / 政策分析 / 板块机会 / 大 V 分析」主卡片始终保留，
     # 保证任何账号口径（会员 10 万字 / 普通 2 万字）都能发得出去。
-    cap = (NEWS_ITEMS_PER_SOURCE if max_items_per_source is None
-           else min(max_items_per_source, NEWS_ITEMS_PER_SOURCE))
+    # 快讯卡片隐藏时仍保留「一个收敛档位」，收敛顺序照旧是「先降政策深度层、最后才轮到快讯」；
+    # 若把 cap 设成 0，plans 会退化成只剩 deep_level=0 一档，政策深度 / 研报卡片会被误删。
+    cap = 1 if not NEWS_CARD_ENABLED else (
+        NEWS_ITEMS_PER_SOURCE if max_items_per_source is None
+        else min(max_items_per_source, NEWS_ITEMS_PER_SOURCE))
     # 每一档内先把快讯列表从 3 条收敛到 1 条，再降政策深度层的档位；快讯整段省略是最后一步。
     plans = [(limit, level) for level in (2, 1, 0) for limit in range(cap, 0, -1)]
     plans.append((0, 0))
