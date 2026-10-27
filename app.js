@@ -27,7 +27,9 @@ runBtn.onclick=async()=>{
   if(runState) runState.textContent='运行中…';
   showToast('正在聚合内容并生成 AI 简报…');
   try{
-    const res=await fetch('api/run',{method:'POST',headers:{'Content-Type':'application/json'}});
+    const deaiMode=typeof window.getDeaiMode==='function' ? window.getDeaiMode() : 'polish';
+    const res=await fetch('api/run',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({deai_mode:deaiMode})});
     if(res.ok){
       const data=await res.json();
       showToast((data&&data.message)||'简报已生成，将推送至 PushPlus');
@@ -128,7 +130,7 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
       indicatorsEl.innerHTML='';
       return;
     }
-    const title=`<div class="ind-title"><span class="kicker">指标说明</span><span style="color:var(--ink-soft);font-weight:400;font-size:10px;">9 维量化 · 面向股市投资 · 阈值写死可复算</span></div>`;
+    const title=`<div class="ind-title"><span class="ind-label">指标说明</span><span style="color:var(--ink-soft);font-weight:400;font-size:10px;">9 维量化 · 面向股市投资 · 阈值写死可复算</span></div>`;
     const grid='<div class="ind-grid">'+indicators.map(ind=>`
       <div class="ind-item">
         <b>${esc(ind.label)}</b>
@@ -156,7 +158,7 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
         <small>${esc(counterText)}</small>
       </span>`;
     }).join('');
-    poolEl.innerHTML=`<div class="etf-pool-head"><span class="kicker">NEW LISTINGS</span>
+      poolEl.innerHTML=`<div class="etf-pool-head"><span class="ind-label">新上市场景</span>
       <b>本版新纳入 ${items.length} 只港交所 ETF</b>
       <span>（${items.filter(x=>(x.counters&&Object.keys(x.counters).length>1)).length} 只设多柜台，已映射进下方热力格子）</span></div>
       <div class="etf-pool-chips">${chips}</div>`;
@@ -179,7 +181,7 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
       ${data.top_pressure && data.top_pressure.length ? `<span>· 承压 <b>${esc(data.top_pressure.map(k=>k.keyword).join('、'))}</b></span>`:''}
     `;
     if(pillEl){
-      pillEl.textContent=`✦ ${data.total_hit||0} 词 · ${bias}`;
+      pillEl.textContent=`${data.total_hit||0} 词 · ${bias}`;
     }
     if(countEl){
       const visible=gridEl.querySelectorAll('.heatmap-cell:not([hidden])').length;
@@ -487,7 +489,7 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
     }
     if(pillEl){
       const us=(impact.markets||[]).find(market=>market.name==='美股');
-      pillEl.textContent=`✦ 近${impact.days||30}日 · 美股${us?us.bias:''}`;
+      pillEl.textContent=`近${impact.days||30}日 · 美股${us?us.bias:''}`;
     }
   }
 
@@ -588,7 +590,7 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
       footEl.innerHTML=`<span>${esc(data.disclaimer||'')} ${esc(data.boundary||'')} `
         + `${esc(data.scenario_weights_note||'')} 实时结果见 <code>/api/big-v</code>。</span>`;
     }
-    if(pillEl) pillEl.textContent=`✦ ${esc(data.name||'预测历史')} · ${esc(data.risk_label||'框架推演')}`;
+    if(pillEl) pillEl.textContent=`${esc(data.name||'预测历史')} · ${esc(data.risk_label||'框架推演')}`;
   }
 
   async function loadBigV(){
@@ -624,7 +626,7 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
       const res=await fetch('api/deepseek/status');
       if(!res.ok) return;
       const data=await res.json();
-      if(pill) pill.textContent=data.enabled ? '✦ DeepSeek 已启用' : '✦ 未配置走 RSS 回退';
+      if(pill) pill.textContent=data.enabled ? 'DeepSeek 已启用' : '未配置走 RSS 回退';
       if(data.enabled){
         state.textContent=`DeepSeek Search 已启用（${data.search_backed_sources?data.search_backed_sources.length:0} 个搜索型数据源同后端）· 每个查询最多 128 字符，结果数默认 10`;
       }
@@ -673,4 +675,97 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
     doSearch(q);
   });
   loadStatus();
+})();
+
+/* ===================== 推送前 · 去 AI 味体检（Hallmark 静态闸门） =====================
+   数据源：GET /api/hallmark（或 /api/deai）。GitHub Pages 纯静态托管时没有后端，
+   保留 index.html 里的静态快照文案，不发送任何请求。 */
+(function(){
+  const section=document.getElementById('deaiSection');
+  if(!section) return;
+  const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const $=id=>document.getElementById(id);
+  const modeSel=$('deaiMode');
+
+  // 记住用户选择的模式，并在手动运行时随 /api/run 一起提交。
+  try{
+    const saved=localStorage.getItem('deai.mode');
+    if(saved && ['polish','audit','off'].includes(saved)) modeSel.value=saved;
+  }catch(e){/* 隐私模式下 localStorage 不可用 */}
+  modeSel.addEventListener('change',()=>{
+    try{ localStorage.setItem('deai.mode', modeSel.value); }catch(e){}
+  });
+  window.getDeaiMode=()=>modeSel ? modeSel.value : 'polish';
+
+  function renderFindings(report){
+    const push=report.surfaces?.push||null, page=report.surfaces?.page||null;
+    $('deaiScoreBefore').textContent=report.overall_score_before ?? '—';
+    $('deaiScoreAfter').textContent=report.overall_score_after ?? '—';
+    const d=(report.overall_score_after??0)-(report.overall_score_before??0);
+    const delta=$('deaiScoreDelta');
+    delta.textContent=(d>0?`+${d}`:String(d))+' 分 · 启发式体检分，非 AIGC 概率';
+    if(d>0) delta.style.color='var(--up)';
+
+    for(const [key,scoreEl,stateEl,label] of [
+      ['push','deaiPushScore','deaiPushState','推送 HTML'],
+      ['page','deaiPageScore','deaiPageState','管理页'],
+    ]){
+      const r=key==='push'?push:page;
+      if(!r){ continue; }
+      $(scoreEl).textContent=`${r.score_before} → ${r.score_after}`;
+      const a=r.after||{}, c=a.counts||{};
+      $(stateEl).textContent=`${label}：${a.findings?.length||0} 条 gate 命中（自动可修 ${c.auto_fixable||0} / 需人工 ${c.manual||0}）；`+
+        `本次改写 ${r.fixes?.filter(f=>f.gate!=='fact-lock').length||0} 类痕迹。` +
+        (r.changed?'已生成改写预览。':'无需改写或已是 audit 结果。');
+    }
+
+    // 合并两面命中，Floor 优先，其次按命中数降序。
+    const merged=[];
+    for(const s of [push,page]){
+      const tag=s===push?'推送':'页面';
+      for(const f of (s?.before?.findings||[])){
+        merged.push({...f, surface:tag});
+      }
+    }
+    const rank={Floor:0,Reflex:1,Finish:2};
+    merged.sort((a,b)=>(rank[a.tier]??3)-(rank[b.tier]??3) || b.count-a.count);
+    const list=$('deaiFindings');
+    if(!merged.length){
+      list.innerHTML='<li><span class="deai-finding-tier">clean</span>两个面均未命中静态 gate。</li>';
+    }else{
+      list.innerHTML=merged.slice(0,14).map(f=>
+        `<li><span class="deai-finding-tier ${esc(f.tier.toLowerCase())}">${esc(f.tier)}</span>`+
+        `<span class="deai-finding-gate">gate ${esc(f.gate)} · ${esc(f.surface)}</span>`+
+        `<b>${esc(f.name)} ×${Number(f.count)||0}</b>`+
+        `<span class="deai-finding-auto">${f.auto?'自动可修':'需人工判断'} · ${esc((f.fix||'').slice(0,54))}</span></li>`
+      ).join('');
+    }
+
+    const waivers=report.waivers||[];
+    if(waivers.length){
+      $('deaiWaivers').innerHTML=waivers.map(w=>
+        `<li><b>${esc(w.item)}</b>（gate ${esc(w.gate)}）：${esc(w.reason)}</li>`).join('');
+    }
+    let boundary=report.boundary||'';
+    const residual=[];
+    for(const s of [push,page]){ const n=s?.after?.residual_note; if(n && !residual.includes(n)) residual.push(n); }
+    if(residual.length) boundary+=' 【残留说明】'+residual.join(' ');
+    if(report.limits) boundary+=' '+report.limits;
+    if(boundary) $('deaiBoundary').textContent=boundary;
+    const cfg=report.config||{};
+    if(cfg.mode) $('deaiPill').textContent=`Hallmark · ${cfg.mode}`;
+    $('deaiFoot').innerHTML=`<span>规则来源：Nutlope/hallmark（MIT）· 引擎 ${esc(report.engine||'')} v${esc(report.version||'')} · `+
+      `检查时间 ${esc(report.checked_at||'')} · 实时报告见 <code>/api/hallmark</code>。</span>`;
+  }
+
+  async function load(){
+    if(isGithubPages) return; // 静态托管：保留快照文案
+    try{
+      const res=await fetch('api/hallmark');
+      if(!res.ok) return;
+      const data=await res.json();
+      if(data && data.surfaces) renderFindings(data);
+    }catch(e){/* 后端未启动时保留静态快照 */}
+  }
+  load();
 })();

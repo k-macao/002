@@ -28,4 +28,10 @@ jobs:
           # 可选：配置后全部搜索型数据源优先走 DeepSeek Search API（2026-10-17 新开放），
           # 未配置自动回退原 Google News RSS 检索，推送不受影响。见 docs/deepseek_search.md
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          # 推送前「去 AI 味」闸门（Hallmark 静态规则，见 docs/hallmark_deai.md）：
+          # polish=体检+改写（默认，非阻塞）；audit=只体检；off=跳过。
+          # 需要「残留 Floor 就不推」时再显式设为 1。
+          DEAI_MODE: polish
+          # DEAI_STRICT: "1"
+          # SKIP_DEAI_CHECK: "1"
         run: python push_brief.py

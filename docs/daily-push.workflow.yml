@@ -25,9 +25,11 @@ jobs:
       - name: 执行推送
         env:
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          # 推送前「去 AI 味」闸门（Hallmark 静态规则，见 docs/hallmark_deai.md）：
+          DEAI_MODE: polish
         run: python push_brief.py
-        # 推送前会做「大盘数据新鲜度检查」，不是最新就不推：
+        # 推送前闸门顺序：大盘新鲜度 → 敏感词快讯过滤 → 去 AI 味体检+改写 → 敏感词终检 → 推送。
         # 退出码 3 = 大盘数据非最新、已按规则跳过推送。job 会显示为失败，
         # 这是有意为之——便于第一时间发现行情接口异常，而不是把旧数据推给用户。
-        # 推送前还会过敏感词检测（sensitive.py）：
         # 退出码 4 = 内容未通过敏感词检测、已按规则跳过推送。
+        # 退出码 5 = DEAI_STRICT=1 且去 AI 味改写后仍有未修复 Floor 命中（默认关闭）。
