@@ -1515,6 +1515,58 @@ class PolicyCarryLayerTest(unittest.TestCase):
         # 主线按绝对影响排序，第一条必须是压制最重的那条。
         self.assertEqual(out["themes"][0]["theme"], "海外货币收紧")
 
+    def test_market_drivers_name_the_theme_that_moves_the_score(self):
+        out = self.impact(date(2026, 10, 28))
+        us = next(item for item in out["markets"] if item["name"] == "美股")
+        self.assertEqual([row["theme"] for row in us["drivers"]["pressure"]], ["海外货币收紧"])
+        self.assertEqual(us["drivers"]["support"], [])
+        self.assertIn("拉低 海外货币收紧", us["driver_line"])
+        a = next(item for item in out["markets"] if item["name"] == "A股")
+        themes = {row["theme"] for row in a["drivers"]["support"] + a["drivers"]["pressure"]}
+        self.assertIn("国内地产金融", themes)
+        self.assertIn("海外货币收紧", themes)
+        # 托底 / 拉低两边相加就是这一层的指数分（同一套组内规则）
+        total = sum(row["score"] for row in a["drivers"]["support"] + a["drivers"]["pressure"])
+        self.assertAlmostEqual(total, a["score"], places=1)
+
+    def test_gap_note_accounts_for_every_outside_release(self):
+        out = self.impact(date(2026, 10, 28))
+        note = out["gap_note"]
+        self.assertIn("窗口前共 11 条", note)
+        self.assertIn(f"{out['counts']['carry']} 项影响期未走完", note)
+        self.assertIn(f"{out['counts']['lapsed']} 项在窗口内到期", note)
+        # 窗口外条目必须被完整交代：存量 + 到期 + 早已结束 = outside
+        self.assertIn("均不计为新发文", note)
+        self.assertNotIn("-979", self.impact(date(2024, 1, 15))["gap_note"])
+
+    def test_lookback_before_ledger_says_releases_are_later(self):
+        out = self.impact(date(2024, 1, 15))
+        self.assertIn("晚于本窗口", out["gap_note"])
+        self.assertIn("不计入本次窗口", out["gap_note"])
+
+    def test_page_section_renders_three_market_logic(self):
+        out = self.impact(date(2026, 10, 28))
+        html = sources.policy_impact.page_section_html(out)
+        self.assertEqual(html.count('id="policyDeepSection"'), 1)
+        for token in ("三市逻辑", "托底 国内地产金融", "拉低 海外货币收紧",
+                      "窗口内政策发布", "存量政策仍在生效", "板块传导", "官方入口"):
+            self.assertIn(token, html)
+        self.assertNotIn("机制推演，不外推点位", html)
+
+    def test_theme_scores_add_up_to_market_scores(self):
+        # 各主线合成分相加，必须等于三市指数分相加（否则卡片里两处数字互相打架）。
+        for as_of in (date(2026, 10, 28), date(2026, 9, 23), date(2026, 8, 24)):
+            out = self.impact(as_of)
+            themes = round(sum(item["net"] for item in out["themes"]), 3)
+            markets = round(sum(market["score"] for market in out["markets"]), 3)
+            self.assertAlmostEqual(themes, markets, places=2, msg=str(as_of))
+
+    def test_default_window_uses_beijing_date(self):
+        # GitHub Actions 跑在 UTC：0–8 点（北京时间）不能把窗口停在昨天。
+        from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+        pi = sources.policy_impact
+        self.assertEqual(pi._as_of(None), (_dt.now(_tz.utc) + _td(hours=8)).date())
+
     def test_no_ledger_side_effects(self):
         first = self.impact(date(2026, 10, 28))
         second = self.impact(date(2026, 10, 28))
