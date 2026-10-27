@@ -73,6 +73,7 @@ from functools import lru_cache
 from datetime import datetime, timedelta, timezone
 import big_v_analysis
 import deepseek_search
+import indie_radar
 import quant_daily
 import policy_impact
 from urllib.parse import urlencode, urljoin
@@ -1617,6 +1618,28 @@ def analyze_big_v(brief: dict, as_of=None) -> dict:
     可直接交给 ``GET /api/big-v`` 或 :func:`build_html` 渲染。
     """
     return big_v_analysis.analyze_big_v(brief, as_of=as_of, section_lookup=section_of)
+
+
+def analyze_indie_radar(as_of=None, signals=None) -> dict:
+    """「AI 独立开发雷达」：方法来自 susumr/radar-dashboard 的信号雷达日报。
+
+    实现在 :mod:`indie_radar`：抓 19 个独立开发 / 产品信号源，按固定 7 模块 + 心法出稿。
+    这里只做「同一进程内复用」——推送要按多个容量档位反复渲染，不能让每档都重抓一遍。
+    """
+    global _INDIE_RADAR_CACHE
+    key = str(as_of or "") + "|" + ("inline" if signals is not None else "collect")
+    cached = _INDIE_RADAR_CACHE.get("payload")
+    if cached and _INDIE_RADAR_CACHE.get("key") == key and time.time() - _INDIE_RADAR_CACHE.get("at", 0) < 900:
+        return cached
+    try:
+        report = indie_radar.analyze(signals=signals, as_of=as_of)
+    except Exception as error:      # 采集层整体异常也不能中断日报
+        report = {"column": indie_radar.COLUMN_TITLE, "as_of": str(as_of or ""),
+                  "modules": {}, "wisdom": {"status": "missing"}, "counts": {},
+                  "headline": f"雷达采集异常：{error}", "error": str(error),
+                  "sources": [], "disclaimer": indie_radar.DISCLAIMER}
+    _INDIE_RADAR_CACHE.update({"at": time.time(), "key": key, "payload": report})
+    return report
 
 
 # ---------------------------------------------------------------- AI 情绪热力图 · 关键词级线索（面向股市投资）
@@ -5175,6 +5198,12 @@ def _quant_report(brief: dict, review: dict | None) -> dict | None:
         return None
 
 
+_INDIE_RADAR_CACHE: dict = {"at": 0.0, "key": "", "payload": None}
+# 「AI 独立开发雷达」开关：默认开；测试 / 离线环境设 INDIE_RADAR=0 即整段跳过（不联网、不占篇幅）。
+INDIE_RADAR_ENABLED = os.environ.get("INDIE_RADAR", "1").strip().lower() not in (
+    "0", "false", "off", "no")
+
+
 def build_html(
     brief: dict,
     now: datetime | None = None,
@@ -5185,6 +5214,7 @@ def build_html(
     max_length: int | None = None,
     series: dict | None = None,
     quant: dict | None = None,
+    radar: dict | None = None,
 ) -> str:
     """生成适合微信阅读的竖版长图文简报（内联样式，兼容 PushPlus HTML 模板）。
 
@@ -5235,6 +5265,9 @@ META_TEXT_HIDDEN: list = []     # 本次推送删掉的片段（供自检与测�
     danger_hi = "#767676"    # 下跌 / 承压：中性灰（单色点缀体系）
     analysis = analyze_brief(brief)
     bigv = analysis.get("big_v") or analyze_big_v(brief)
+    # 雷达：显式注入优先，其次按开关现抓（进程内 15 分钟内复用）
+    radar = radar if isinstance(radar, dict) else (
+        analyze_indie_radar() if INDIE_RADAR_ENABLED else None)
     hl_tags = list(dict.fromkeys(
         analysis["sectors"] + analysis["sectors_up"] + analysis["sectors_down"]
         + [entry["tag"] for entry in analysis["opportunity_sectors"]]
@@ -5853,6 +5886,67 @@ f'<div class="ftr">近30日只统计已核验发文日的全球政策，已观�
             return ""
         return quant_daily.build_html_section(quant, level=level)
 
+    def _render_indie_radar(level: int = 2) -> str:
+        """「AI 独立开发雷达」卡片：7 模块精选 + 今日心法。
+
+        ``level=2`` 每模块 3 条；``level=1`` 2 条 + 心法；``level=0`` 只留栏目与今日结论
+        （容量最紧的档位让位给量化 / 板块 / 大 V 等主线栏目）。
+        没有素材的模块整行不渲染（不写占位、不凑数）。
+        """
+        report = radar if isinstance(radar, dict) else None
+        if not isinstance(report, dict):          # 开关关闭或采集异常：整段省略
+            return ""
+        modules = report.get("modules") or {}
+        per_module = 3 if level >= 2 else (2 if level >= 1 else 0)
+        rows = []
+        for module in indie_radar.MODULES:
+            entries = (modules.get(module["key"]) or [])[:per_module]
+            if not entries:
+                continue
+            if module["key"] == "data_signals":
+                # 数据信号是统计出的观察 + 判断，没有标题 / 链接
+                lines = "".join(
+                    f'<div class="ev">· {_esc(_trunc(entry.get("observation") or "", 90))}'
+                    + (f'｜{_esc(_trunc(entry.get("judgment") or "", 70))}'
+                       if level >= 1 and entry.get("judgment") else "")
+                    + "</div>"
+                    for entry in entries
+                )
+            else:
+                lines = "".join(
+                    f'<div class="ev">· {_hl(_trunc(entry.get("title") or "", 56))}'
+                    f'｜{_esc(entry.get("source") or "")}'
+                    + (f'，热度 {entry["points"]}' if entry.get("points") else "")
+                    + (f'（命中 {"、".join(entry.get("matched") or [])}）'
+                       if level >= 2 and entry.get("matched") else "")
+                    + "</div>"
+                    for entry in entries
+                )
+            rows.append(
+                f'<tr><td class="td-n">{module["no"]}</td><td class="td-t">'
+                f'<div><span class="tag">{_esc(module["label"])}</span> '
+                f'<span class="sub">{_esc(module["lead"])}</span></div>{lines}</td></tr>'
+            )
+        wisdom = report.get("wisdom") or {}
+        if wisdom.get("status") == "live" and level >= 1:
+            steps = "".join(f'<div class="ev">· {_esc(step)}</div>'
+                            for step in (wisdom.get("steps") or [])[:4 if level >= 2 else 2])
+            rows.append(
+                '<tr><td class="td-n">心</td><td class="td-t">'
+                f'<div><span class="tag-w">今日心法</span> {_esc(wisdom.get("method") or "")}</div>'
+                f'<div class="ev">· {_esc(wisdom.get("scenario") or "")}</div>{steps}</td></tr>'
+            )
+        if not rows:
+            rows.append('<tr><td class="td-n">·</td><td class="td-t">'
+                        f'<div>{_esc(report.get("headline") or "")}</div></td></tr>')
+        counts = report.get("counts") or {}
+        return (
+            '<div class="card"><div class="hdr"><span class="tag">AI 独立开发雷达</span>'
+            f'<span class="sub">{indie_radar.status_line(report)}</span></div>'
+            f'<div class="txt">{_esc(report.get("headline") or "")}</div>'
+            f'<table class="tbl">{ "".join(rows) }</table></div>'
+        )
+
     def _render_big_v(level: int = 2) -> str:
         """「大 V 分析」卡片：框架六步 + 政治 / 地缘 / 经济因果链 + 升级博弈树。
 
@@ -6030,6 +6124,7 @@ f'<div class="ftr">近30日只统计已核验发文日的全球政策，已观�
             + policy_card
             + policy_deep_cards
             + opportunities_card
+            + _render_indie_radar(deep_level)
             + _render_big_v(deep_level)
             + _news_card(per_source)
             + f'<div style="margin:8px 0 0;color:{muted};font-size:10px;text-align:center;">数据仅供参考，不构成投资建议</div>'

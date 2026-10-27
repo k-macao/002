@@ -1468,3 +1468,19 @@ footer strong { display: block; color: var(--ink); text-align: center; font-size
 
 /* 说明 / 注解 / 解析 / 提醒类文字：一律不展示（规则见 meta_text.py、页内标记见 index.html） */
 [data-meta] { display: none !important; }
+
+/* AI 独立开发雷达：模块化信号列表（方法来自 susumr/radar-dashboard） */
+.radar-modules { display: grid; gap: 8px; margin-top: 8px; }
+.radar-module { border-top: 1px solid var(--rule); padding-top: 7px; }
+.radar-module h3 { margin: 0 0 4px; font-size: 12px; font-weight: 800; color: var(--ink); display: flex; align-items: center; gap: 6px; }
+.radar-no { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 3px; background: var(--green); color: var(--ink); font-size: 10px; font-weight: 800; }
+.radar-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.radar-item { font-size: 12px; line-height: 1.5; color: var(--ink); }
+.radar-item a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--gray-light); }
+.radar-item a:hover { text-decoration-color: var(--ink); }
+.radar-src { margin-left: 6px; color: var(--ink-soft); font-size: 10.5px; }
+.radar-judgment { display: block; color: var(--ink-soft); font-size: 10.5px; }
+.radar-wisdom { margin-top: 9px; border-left: 3px solid var(--green); padding: 4px 0 4px 9px; }
+.radar-wisdom b { font-size: 12px; }
+.radar-wisdom p { margin: 3px 0; color: var(--ink-soft); font-size: 11.5px; }
+.radar-wisdom ol { margin: 4px 0 0 16px; padding: 0; font-size: 11.5px; line-height: 1.6; }

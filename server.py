@@ -22,6 +22,8 @@ HUMANIZER_MODE / SKIP_HUMANIZER_CHECK / HUMANIZER_FORCE / HUMANIZER_STRICT 见 h
 
 DeepSeek Search & Fetch（2026-10-17 新 API，需 DEEPSEEK_API_KEY）：
 GET  /api/big-v（或 /api/bigv）「大 V 分析」结构化 AI 框架推演（政治 / 地缘 / 经济）
+GET  /api/radar 「AI 独立开发雷达」7 模块 + 心法（?format=prompt 取当日 AI 提示词）
+     方法来自 github.com/susumr/radar-dashboard；?format=prompt 直接给任意大模型复用。
 GET  /api/deepseek/status 配置自检（不泄漏 Key）
 GET  /api/search?q=...&count=10&need_content=0 全网搜索
 POST /api/search {"query": ..., "count": ...} 同上
@@ -71,6 +73,9 @@ _HUMANIZER_TTL = 30
 # /api/quant 的日报缓存：五维分析本身是纯计算，但会带一次行情抓取（已另有 5 分钟缓存）。
 _QUANT_CACHE: dict = {"at": 0.0, "payload": None, "key": None}
 _QUANT_TTL = 60
+# /api/radar：采集 19 个独立开发信号源较重，5 分钟内复用同一份结果。
+_RADAR_CACHE: dict = {"at": 0.0, "payload": None}
+_RADAR_TTL = 300
 
 
 def _read_surface(name: str) -> str:
@@ -293,6 +298,27 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as error:
                 return self.send_json(HTTPStatus.OK, {"error": str(error)})
             return self.send_json(HTTPStatus.OK, sources.analyze_big_v(brief))
+        if path in ("/api/radar", "/api/indie-radar"):
+            # 「AI 独立开发雷达」：方法来自 github.com/susumr/radar-dashboard。
+            # ?format=prompt 直接返回当日 AI 提示词（把 19 个源的条目拼进去，可喂给任意大模型）。
+            qs = parse_qs(query)
+            fmt = (qs.get("format") or ["json"])[0].strip().lower()
+            now = time.time()
+            if _RADAR_CACHE["payload"] is not None and now - _RADAR_CACHE["at"] < _RADAR_TTL:
+                report = _RADAR_CACHE["payload"]
+            else:
+                try:
+                    import indie_radar
+                    report = indie_radar.analyze()
+                except Exception as error:
+                    return self.send_json(HTTPStatus.OK, {"error": str(error)})
+                _RADAR_CACHE.update({"at": now, "payload": report})
+            if fmt in ("prompt", "ai", "ai-prompt"):
+                import indie_radar
+                # 提示词复用上面那次采集（缓存 30 分钟），不重复打 19 个源。
+                return self.send_text(HTTPStatus.OK, indie_radar.prompt_today(),
+                                      "text/plain; charset=utf-8")
+            return self.send_json(HTTPStatus.OK, report)
         if path == "/api/quant":
             # 「AI 量化日报」：五维分析 + 策略信号 + 风险 + 100 字摘要 + 41 个原子动作方案。
             # ?demo=1 用内置示例数据包（离线预览模板）；?format=markdown 直接返回归档用 Markdown；

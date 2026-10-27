@@ -7,6 +7,7 @@
 import math
 import os
 import random
+import time
 import unittest
 from datetime import date
 
@@ -1795,6 +1796,70 @@ class MetaTextHiddenTest(_NewsCardOn, unittest.TestCase):
         sources.build_html(self._brief(), **self._kanpan())
         self.assertTrue(sources.META_TEXT_HIDDEN)
         self.assertTrue(all(isinstance(item, str) for item in sources.META_TEXT_HIDDEN))
+
+
+class IndieRadarCardTest(_NewsCardOn, unittest.TestCase):
+    """「AI 独立开发雷达」栏目：接进推送正文，容量紧时降级，采集失败整段省略。"""
+
+    def _brief(self):
+        return {"金十数据": [{"title": "半导体板块大涨，资金回流", "url": ""}]}
+
+    def _report(self):
+        import indie_radar
+        signals = {"items": [
+            {"source": "v2ex", "source_name": "V2EX", "title": "自己做了个开源小工具，求反馈",
+             "url": "https://www.v2ex.com/t/1", "note": "CLI 工具", "points": 12, "tags": []},
+            {"source": "github", "source_name": "GitHub 总榜", "title": "alice/tinycms",
+             "url": "https://github.com/alice/tinycms",
+             "note": "Boilerplate with pricing page and MRR dashboard", "points": 900, "tags": []},
+        ], "sources": [{"key": "v2ex", "name": "V2EX", "status": "ok", "note": "1 条"},
+                       {"key": "producthunt", "name": "Product Hunt", "status": "skipped",
+                        "note": "未配置 PH_TOKEN"}],
+            "ok": 1, "skipped": 1, "error": 0, "timeout": 0, "empty": 0}
+        return indie_radar.analyze(signals=signals, as_of="2026-10-28")
+
+    def test_card_is_in_push_body(self):
+        out = sources.build_html(self._brief(), radar=self._report())
+        self.assertIn("AI 独立开发雷达", out)
+        self.assertIn("alice/tinycms", out)          # 推送正文只列标题，不带抓取地址
+        self.assertIn("今日赚钱案例", out)
+        self.assertIn("今日心法", out)
+
+    def test_card_sits_between_opportunities_and_big_v(self):
+        out = sources.build_html(self._brief(), radar=self._report())
+        self.assertLess(out.index("AI 板块机会"), out.index("AI 独立开发雷达"))
+        self.assertLess(out.index("AI 独立开发雷达"), out.index("大 V 分析"))
+
+    def test_capacity_tiers_degrade(self):
+        report = self._report()
+        full = sources.build_html(self._brief(), radar=report)
+        tight = sources.build_html(self._brief(), max_length=16000, radar=report)
+        self.assertIn("AI 独立开发雷达", tight)          # 栏目本身不消失
+        self.assertLess(len(tight), len(full))
+        self.assertNotIn("今日心法", tight)              # 最紧档位只留栏目与今日结论
+
+    def test_empty_report_renders_headline_only(self):
+        import indie_radar
+        empty = indie_radar.analyze(signals={"items": [], "sources": [], "ok": 0,
+                                             "skipped": 0, "error": 0})
+        out = sources.build_html(self._brief(), radar=empty)
+        self.assertIn("AI 独立开发雷达", out)
+        self.assertIn("没有取到信号", out)
+
+    def test_switch_off_skips_column(self):
+        old = sources.INDIE_RADAR_ENABLED
+        sources.INDIE_RADAR_ENABLED = False
+        try:
+            out = sources.build_html(self._brief())
+        finally:
+            sources.INDIE_RADAR_ENABLED = old
+        self.assertNotIn("AI 独立开发雷达", out)
+
+    def test_analyze_wrapper_is_cached(self):
+        sources._INDIE_RADAR_CACHE.update({"at": 0.0, "key": "", "payload": None})
+        report = self._report()
+        sources._INDIE_RADAR_CACHE.update({"at": time.time(), "key": "|inline", "payload": report})
+        self.assertIs(sources.analyze_indie_radar(signals=[{}]), report)
 
 
 class AshareReviewTest(unittest.TestCase):
