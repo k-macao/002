@@ -13,16 +13,28 @@
                              强制敏感词闸门结果（测试用）
     SENSITIVE_LEXICON=/path/to.txt
                              外掛敏感词（一行一词；``block:词`` 为高严重度）
+    DEAI_MODE=polish|audit|off
+                             推送前「去 AI 味」闸门（``hallmark_deai.py``，规则取自
+                             GitHub 上的 Nutlope/hallmark，MIT 许可）。默认 polish：
+                             体检 + 自动改写装饰层；audit 只体检不改写；off 跳过。
+    SKIP_DEAI_CHECK=1        跳过去 AI 味闸门（测试/应急）
+    DEAI_FORCE=pass|block    强制放行/拦截去 AI 味闸门（测试/应急）
+    DEAI_STRICT=1            改写后仍有未修复的 Floor 命中就拦截推送（退出码 5）
 
-推送前会先做「大盘数据新鲜度检查」：简报里的 A 股复盘数据必须来自实时行情接口
+推送前闸门顺序（与 server.py ``POST /api/run`` 完全一致）：
+① 大盘数据新鲜度检查 → ② 敏感词快讯过滤 → ③ **去 AI 味体检 + 改写（本版本新增）**
+→ ④ 敏感词终检（在改写后的最终 HTML 上执行）→ ⑤ 推送。
+
+第 ① 步：简报里的 A 股复盘数据必须来自实时行情接口
 （东方财富主源，失联时自动切换腾讯证券备用源）、且复盘日等于最近一个可复盘交易日；
 不是最新（主备行情接口均不可用 / 回退内置快照 /
 接口数据滞后）就放弃本次推送，退出码 3（GitHub Actions 显示为失败，便于发现）。
 
-推送前还会过敏感词检测（``sensitive.py``，对齐《网络信息内容生态治理规定》）：先按条剔除违规快讯，
+第 ④ 步：敏感词检测（``sensitive.py``，对齐《网络信息内容生态治理规定》）：先按条剔除违规快讯，
 再扫描标题 + HTML；残留命中则放弃本次推送，退出码 4。正常财经 / 地缘新闻（战争、制裁、Iran 等）不会误伤。
 
-退出码：0 成功，1 未配置 token，2 推送失败，3 大盘数据非最新（已跳过推送），4 内容未通过敏感词检测（已跳过推送）。
+退出码：0 成功，1 未配置 token，2 推送失败，3 大盘数据非最新（已跳过推送），
+4 内容未通过敏感词检测（已跳过推送），5 去 AI 味严格模式拦截（已跳过推送）。
 """
 import json
 import os
@@ -30,6 +42,7 @@ from datetime import datetime
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+import hallmark_deai
 import sensitive
 import sources
 
@@ -142,10 +155,25 @@ def main():
         if filtered["dropped_count"]:
             print(f"敏感词检测：{filtered['reason']}", flush=True)
 
+    content = build_content(datetime.now(), review=sources.analyze_ashare(market), brief=brief)
+
+    # ── 推送前闸门（新增）：去 AI 味体检 + 改写。规则取自 Nutlope/hallmark（MIT）。
+    # 只改装饰层（眉标 / 装饰符号 / 中点元信息 / 追踪字距 / 单斜体词），
+    # 事实保护：不动新闻正文、数字、日期、人名、引用与链接。
+    # 默认 polish（改写）；DEAI_MODE=audit 只体检；off / SKIP_DEAI_CHECK 跳过。
+    deai = hallmark_deai.check_push("", content)
+    print(f"去 AI 味：{deai['reason'] or deai['mode']}", flush=True)
+    if not deai["ok"]:
+        print("跳过推送：去 AI 味严格模式拦截，本次不推。", flush=True)
+        print(f"诊断：{json.dumps(deai.get('report', {}).get('after', {}), ensure_ascii=False)[:800]}",
+              flush=True)
+        return 5
+    content = deai["content"]
+
     payload = {
         "token": token,
         "title": "章鱼 AI·全景分析（对冲组合002）",
-        "content": build_content(datetime.now(), review=sources.analyze_ashare(market), brief=brief),
+        "content": content,
         "template": "html",
     }
     # 默认一对一：不带 topic 字段；只有显式配置群组编码才走一对多。

@@ -27,14 +27,14 @@
     </header>
 
     <div class="pixel-status" id="statusBar" role="status" aria-live="polite">
-      <span class="pixel-dot ok"></span>
+
       <span>全网调研连接正常</span>
     </div>
 
     <section class="pixel-hero">
       <div class="hero-matrix" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-      <div class="eyebrow"><span class="live-dot"></span> 全网 AI 调研 / 境内 × 境外</div>
-      <h1>章鱼 AI·<em>全景分析</em><small>（对冲组合002）</small></h1>
+
+      <h1>章鱼 AI·全景分析<small>（对冲组合002）</small></h1>
       <p class="hero-copy">对冲组合量化策略 · 全网 AI 调研境内境外数据，由多个大模型混合部署。</p>
       <div class="pixel-panel next-run">
         <span>调研范围</span>
@@ -46,7 +46,7 @@
 
     <section class="pixel-section schedule-section">
       <div class="pixel-section-head">
-        <div><span class="kicker">DAILY BRIEF</span><h2>推送计划</h2></div>
+        <div><h2>推送计划</h2></div>
         <button class="pixel-text-btn" id="editSchedule">编辑</button>
       </div>
       <div class="schedule-card">
@@ -69,10 +69,71 @@
       </button>
     </section>
 
+    <section class="pixel-section" id="deaiSection" data-column="去AI味">
+      <div class="pixel-section-head">
+        <div><h2>推送前 · 去 AI 味体检</h2></div>
+        <span class="ai-pill" id="deaiPill">Hallmark 静态闸门</span>
+      </div>
+      <article class="insight-card deai-card">
+        <p class="deai-lead">推送前先做一次「去 AI 味」体检：按 <a href="https://github.com/Nutlope/hallmark" target="_blank" rel="noopener noreferrer">Nutlope/hallmark</a>（MIT）的反 AI-slop 设计规则扫描<strong>推送 HTML</strong>与<strong>管理页</strong>，改掉能安全改的装饰痕迹，并对每个面出一份体检报告。只改装饰层，不动新闻事实、数字、日期、人名、引用与链接。</p>
+
+        <div class="deai-scoreboard">
+          <div class="deai-score-cell">
+            <small>两面综合分（体检前）</small>
+            <b id="deaiScoreBefore">—</b>
+          </div>
+          <div class="deai-score-arrow" aria-hidden="true">→</div>
+          <div class="deai-score-cell">
+            <small>两面综合分（改写后）</small>
+            <b id="deaiScoreAfter">—</b>
+          </div>
+          <div class="deai-score-delta" id="deaiScoreDelta">—</div>
+        </div>
+
+        <div class="deai-mode-row">
+          <label for="deaiMode">本次推送模式</label>
+          <select id="deaiMode" aria-label="去 AI 味模式">
+            <option value="polish">polish · 体检 + 改写（默认）</option>
+            <option value="audit">audit · 只体检不改写</option>
+            <option value="off">off · 跳过去 AI 味闸门</option>
+          </select>
+          <span class="deai-mode-note">运行后端时由前端把此模式随 /api/run 提交；GitHub Actions 由 DEAI_MODE 环境变量控制。</span>
+        </div>
+
+        <div class="deai-surfaces" id="deaiSurfaces">
+          <div class="deai-surface">
+            <div class="deai-surface-head"><b>推送 HTML</b><span id="deaiPushScore">—</span></div>
+            <p class="deai-surface-state" id="deaiPushState">等待体检数据…</p>
+          </div>
+          <div class="deai-surface">
+            <div class="deai-surface-head"><b>管理页</b><span id="deaiPageScore">—</span></div>
+            <p class="deai-surface-state" id="deaiPageState">等待体检数据…</p>
+          </div>
+        </div>
+
+        <div class="deai-findings-wrap">
+          <b>命中 gate（可改 / 需人工判断）</b>
+          <ul class="deai-findings" id="deaiFindings">
+            <li>静态快照：尚未连接后端，运行 server.py 后本区显示实时体检结果。</li>
+          </ul>
+        </div>
+
+        <details class="deai-details">
+          <summary>保留项（waivers）与方法边界</summary>
+          <ul class="deai-waivers" id="deaiWaivers">
+            <li>品牌字标、功能性图标、邮件内联色与因果链箭头按 Hallmark waiver 机制保留。</li>
+          </ul>
+          <p class="deai-boundary" id="deaiBoundary">分数是启发式体检分，不是 AIGC 检测概率；render/judge 类 gate 需浏览器与人眼判定，本闸门不假装有结论。</p>
+        </details>
+
+        <div class="insight-foot" id="deaiFoot"><span>规则来源：Nutlope/hallmark（MIT）· 本仓库为可静态判定的 M 类 gate 子集移植，零第三方依赖、可离线运行。静态快照 2026-10-27；实时报告见 <code>/api/hallmark</code>。</span></div>
+      </article>
+    </section>
+
     <section class="pixel-section">
       <div class="pixel-section-head">
-        <div><span class="kicker">AI INSIGHT</span><h2>AI 每日总结</h2></div>
-        <span class="ai-pill">✦ 多模型已分析</span>
+        <div><h2>AI 每日总结</h2></div>
+        <span class="ai-pill">多模型已分析</span>
       </div>
       <article class="insight-card" id="insightCard">
         <div class="quote-mark">“</div>
@@ -97,8 +158,8 @@
 
     <section class="pixel-section">
       <div class="pixel-section-head">
-        <div><span class="kicker">AI WATCH</span><h2>AI 看盘</h2></div>
-        <span class="ai-pill">✦ A股 · 港股 · 美股</span>
+        <div><h2>AI 看盘</h2></div>
+        <span class="ai-pill">A股、港股、美股</span>
       </div>
       <article class="review-card" id="reviewCard">
         <div class="review-market">
@@ -167,8 +228,8 @@
 
     <section class="pixel-section" id="heatmapSection">
       <div class="pixel-section-head">
-        <div><span class="kicker">AI HEATMAP</span><h2>AI 情绪热力图</h2></div>
-        <span class="ai-pill" id="heatmapPill">✦ 关键词级线索</span>
+        <div><h2>AI 情绪热力图</h2></div>
+        <span class="ai-pill" id="heatmapPill">关键词级线索</span>
       </div>
       <article class="insight-card" id="heatmapCard">
         <p class="policy-headline" id="heatmapHeadline">正在加载情绪热力图…</p>
@@ -194,8 +255,8 @@
 
     <section class="pixel-section">
       <div class="pixel-section-head">
-        <div><span class="kicker">AI POLICY</span><h2>AI 政策分析</h2></div>
-        <span class="ai-pill">✦ 鹰鸽取向</span>
+        <div><h2>AI 政策分析</h2></div>
+        <span class="ai-pill">鹰鸽取向</span>
       </div>
       <article class="insight-card">
         <p class="policy-headline">政策面集中在<mark class="press">地缘与贸易政策</mark>与<mark class="press">资本市场监管</mark>（40 源命中 · 115 条提及），取向<mark class="press">偏鹰</mark>（鹰派 21 : 鸽派 4），收紧预期压制高估值与利率敏感资产；利好：<mark>货币政策</mark>、<mark>汇率与外汇干预</mark>；承压：<mark class="press">地缘与贸易政策</mark>、<mark class="press">资本市场监管</mark>；政策面多空 15 : 19，建议关注政策信号的「转向确认」，避免单边押注。</p>
@@ -229,8 +290,8 @@
 
     <section class="pixel-section" id="policyDeepSection">
       <div class="pixel-section-head">
-        <div><span class="kicker">AI POLICY DEEP</span><h2>AI 政策深度</h2></div>
-        <span class="ai-pill" id="policyDeepPill">✦ 近30日 · 三市</span>
+        <div><h2>AI 政策深度</h2></div>
+        <span class="ai-pill" id="policyDeepPill">近30日 · 三市</span>
       </div>
       <article class="insight-card" id="policyDeepCard">
         <p class="policy-headline" id="policyDeepHeadline">近30日（2026-08-25 至 2026-09-23）核验<mark>8 项正式发布</mark>、1 项政策信号、1 项窗口内生效。压制主线：<mark class="press">美联储加息至 3.75%-4.00%</mark>、<mark class="press">欧央行存款利率至 2.50%</mark>。对冲支撑：<mark>上市房企再融资开闸</mark>、<mark>房贷期限延至 40 年</mark>。三市：A 股中性、港股中性、<mark class="press">美股偏空</mark>。已观测与机制推演分开，不外推未报道的指数点位。</p>
@@ -316,8 +377,8 @@
 
     <section class="pixel-section">
       <div class="pixel-section-head">
-        <div><span class="kicker">AI POLICY RESEARCH</span><h2>AI 政策研报</h2></div>
-        <span class="ai-pill">✦ LSTM × Prophet</span>
+        <div><h2>AI 政策研报</h2></div>
+        <span class="ai-pill">LSTM × Prophet</span>
       </div>
       <article class="insight-card">
         <p class="policy-headline"><mark class="press">政策承压（偏空）</mark>，收紧 / 管制取向且政策面净空占优；当日覆盖 40 个数据源、115 条提及，取向<mark class="press">偏鹰</mark>（鹰派 21 : 鸽派 4），政策面多空 15 : 19，时间尺度为短期 1-4 周、中期 1-6 个月、长期 6-36 个月。</p>
@@ -357,8 +418,8 @@
 
     <section class="pixel-section">
       <div class="pixel-section-head">
-        <div><span class="kicker">AI SECTORS</span><h2>AI 板块机会</h2></div>
-        <span class="ai-pill">✦ 信号排行</span>
+        <div><h2>AI 板块机会</h2></div>
+        <span class="ai-pill">信号排行</span>
       </div>
       <article class="insight-card">
         <ul class="insight-points sector-points">
@@ -392,8 +453,8 @@
 
     <section class="pixel-section" id="bigVAnalysisSection" data-column="大V分析">
       <div class="pixel-section-head">
-        <div><span class="kicker">BIG V LENS</span><h2>大 V 分析</h2></div>
-        <span class="ai-pill" id="bigVPill">✦ 江学勤 · 预测历史框架</span>
+        <div><h2>大 V 分析</h2></div>
+        <span class="ai-pill" id="bigVPill">江学勤 · 预测历史框架</span>
       </div>
       <article class="insight-card bigv-card">
         <div class="bigv-notice">
@@ -504,8 +565,8 @@
 
     <section class="pixel-section" id="deepseekSearchSection">
       <div class="pixel-section-head">
-        <div><span class="kicker">DEEPSEEK SEARCH</span><h2>全网搜索</h2></div>
-        <span class="ai-pill" id="deepseekSearchPill">✦ DeepSeek 搜索</span>
+        <div><h2>全网搜索</h2></div>
+        <span class="ai-pill" id="deepseekSearchPill">DeepSeek 搜索</span>
       </div>
       <article class="insight-card">
         <form class="ds-search-form" id="dsSearchForm">

@@ -5754,7 +5754,10 @@ f'<div class="ftr">近30日只统计已核验发文日的全球政策，已观�
         '<i class="on"></i>' if i in _mtx_on else '<i></i>' for i in range(24)) + '</div>')
 
     css = (
-        f'<style>body,td,div,span,a{{font-family:Arial,\'PingFang SC\',\'Microsoft YaHei\',\'Noto Sans SC\',sans-serif;box-sizing:border-box;}}'
+        # Hallmark · de-AI floor（Nutlope/hallmark, MIT）：去眉标 / 装饰符号 / 中点元信息，
+        # 保留邮件客户端兼容的内联字面色与品牌字标（见 hallmark_deai.WAIVERS）。
+        f'<style>/* Hallmark · de-AI floor · 推送模板已按 rule 收敛装饰层 */'
+        f'body,td,div,span,a{{font-family:Arial,\'PingFang SC\',\'Microsoft YaHei\',\'Noto Sans SC\',sans-serif;box-sizing:border-box;}}'
         f'.bg{{width:100%;max-width:100%;margin:0;padding:10px;background:{paper};color:{ink};word-break:break-word;}}'
         f'.card{{margin:0 0 10px;background:{paper_lift};border:1px solid {rule};border-radius:10px;padding:9px 11px 7px;}}'
         f'.card-m{{margin:0 0 10px;background:{paper_lift};border:1px solid {rule};border-radius:10px;padding:11px 12px;color:{ink};}}'
@@ -5812,7 +5815,7 @@ f'<div class="ftr">近30日只统计已核验发文日的全球政策，已观�
                     f'{_esc(step.get("label") or "")}</b>｜{_esc(step.get("question") or "")}</div>'
                     for step in (bigv.get("framework_steps") or [])
                 )
-                rows.append(f'<tr><td class="td-n">✦</td><td class="td-t">'
+                rows.append(f'<tr><td class="td-n">·</td><td class="td-t">'
                             f'<div>框架：{_esc(bigv.get("name") or "")}（'
                             f'{_esc(bigv.get("analyst") or "")}）· 只借鉴可验证方法，不模仿本人语气。</div>'
                             f'{step_html}</td></tr>')
@@ -5889,7 +5892,7 @@ f'<div class="ftr">近30日只统计已核验发文日的全球政策，已观�
         )
         return (
             f'<div class="card"><div class="hdr"><span class="tag">大 V 分析</span>'
-            f'<span class="sub">✦ {_esc(bigv.get("analyst") or "")} · '
+            f'<span class="sub">{_esc(bigv.get("analyst") or "")} · '
             f'{_esc(bigv.get("name") or "")}</span></div>'
             f'<div class="txt">{_hl(_esc(bigv.get("headline") or ""))}</div>'
             f'<table class="tbl">{"".join(rows)}</table>'

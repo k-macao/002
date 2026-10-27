@@ -1,3 +1,6 @@
+/* Hallmark · de-AI floor · 去 AI 味静态闸门（Nutlope/hallmark, MIT）
+   批评行：眉标 / 追踪大写 / 装饰符号 / 中点元信息 / 单斜体词是本项目最重的机器痕迹，
+   已在源码级逐条收敛；邮件模板的内联字面色与品牌字标按 waiver 保留。 */
 /* ==================================================
    简洁金融 App 风格 · 白底 × 浅灰圆角卡片 × 柠檬绿点缀
    参考截图：纯白背景、浅灰圆角大卡片、黑色粗体标题、
@@ -38,8 +41,8 @@ html {
 
 body {
   margin: 0;
-  min-height: 100vh;
-  overflow-x: hidden;
+  min-height: 100dvh;
+  overflow-x: clip;
   background: var(--paper);
   color: var(--ink);
   font-family: var(--body-font);
@@ -116,7 +119,7 @@ mark.press { background: var(--gray-light); color: var(--gray-dark); }
   border-radius: 4px;
   font-size: 9px;
   font-weight: 800;
-  letter-spacing: .06em;
+  letter-spacing: .02em;
   white-space: nowrap;
 }
 
@@ -155,25 +158,15 @@ mark.press { background: var(--gray-light); color: var(--gray-dark); }
   font-size: 11px;
 }
 
-.pixel-dot,
-.live-dot {
-  width: 7px;
-  height: 7px;
-  display: inline-block;
-  flex: 0 0 auto;
-  background: var(--green);
-  border-radius: 50%;
-}
-
-.live-dot { animation: liveblink 1.6s ease-in-out infinite; }
-
-@keyframes liveblink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: .3; }
-}
-
+/* Hallmark 63/30a：删除装饰状态圆点（含其闪烁动画）。
+   27：保留全局 reduced-motion 兜底，任何未来新增动画都自动被关闭。 */
 @media (prefers-reduced-motion: reduce) {
-  .live-dot { animation: none; }
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Hero / report cover：白底大标题，右侧点阵矩阵 + 分段进度条 */
@@ -222,20 +215,14 @@ mark.press { background: var(--gray-light); color: var(--gray-dark); }
 
 .seg-bar i.on { background: var(--green); }
 
-.eyebrow,
-.kicker {
+/* Hallmark 54/67：删除只报节名的眉标；app.js 动态生成的标签统一用常规字重、
+   常规字距的 ind-label，不再用全大写追踪小标签。 */
+.ind-label {
   color: var(--ink-soft);
   font-size: 10px;
-  font-weight: 800;
-  letter-spacing: .12em;
+  font-weight: 700;
+  letter-spacing: .02em;
   line-height: 1.4;
-}
-
-.eyebrow {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-bottom: 8px;
 }
 
 .pixel-hero h1 {
@@ -245,16 +232,6 @@ mark.press { background: var(--gray-light); color: var(--gray-dark); }
   font-weight: 900;
   letter-spacing: -.04em;
   line-height: 1.16;
-}
-
-.pixel-hero h1 em {
-  font-style: normal;
-  background: var(--green);
-  color: var(--black);
-  padding: 0 7px;
-  border-radius: 6px;
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
 }
 
 .pixel-hero h1 small {
@@ -419,7 +396,7 @@ mark.press { background: var(--gray-light); color: var(--gray-dark); }
   left: 3px;
   width: 13px;
   height: 13px;
-  background: #fff;
+  background: var(--paper);
   border: none;
   border-radius: 50%;
   box-shadow: 0 1px 2px rgba(17, 17, 17, .25);
@@ -483,7 +460,7 @@ mark.press { background: var(--gray-light); color: var(--gray-dark); }
   border-radius: 4px;
   font-size: 11px;
   font-weight: 800;
-  letter-spacing: .04em;
+  letter-spacing: .02em;
   white-space: nowrap;
 }
 
@@ -729,7 +706,7 @@ mark.press { background: var(--gray-light); color: var(--gray-dark); }
   color: var(--ink-soft);
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: .04em;
+  letter-spacing: .02em;
 }
 
 .impact-cell .impact-bias {
@@ -1028,7 +1005,7 @@ footer strong { display: block; color: var(--ink); text-align: center; font-size
   font-size: 9px;
   font-weight: 700;
   color: var(--ink-soft);
-  letter-spacing: .04em;
+  letter-spacing: .02em;
 }
 .cell-etf b { font-weight: 700; }
 .cell-etf em {
@@ -1294,14 +1271,14 @@ footer strong { display: block; color: var(--ink); text-align: center; font-size
 .bigv-domain > ul:not(.sector-evidence) li { padding: 2px 0; color: var(--ink-soft); font-size: 11px; line-height: 1.7; }
 .bigv-domain > ul:not(.sector-evidence) b { color: var(--ink); }
 .bigv-scenarios { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-top: 11px; }
-.bigv-scenario { padding: 9px; border: 1px solid var(--rule); border-top: 3px solid var(--green); border-radius: 9px; background: #fff; }
+.bigv-scenario { padding: 9px; border: 1px solid var(--rule); border-top: 3px solid var(--green); border-radius: 9px; background: var(--paper); }
 .bigv-scenario.press { border-top-color: var(--gray-dark); }
 .bigv-scenario-head { display: flex; justify-content: space-between; gap: 6px; align-items: baseline; }
 .bigv-scenario-head b { color: var(--ink); font-size: 11px; }
 .bigv-scenario-head span { color: var(--ink-soft); font-size: 10px; white-space: nowrap; }
 .bigv-scenario p { margin: 6px 0; color: var(--ink); font-size: 10.5px; line-height: 1.7; }
 .bigv-scenario small { color: var(--ink-soft); font-size: 9.5px; line-height: 1.6; }
-.bigv-watch { margin-top: 11px; padding: 9px 11px; border: 1px solid var(--rule); border-radius: 10px; background: #fff; }
+.bigv-watch { margin-top: 11px; padding: 9px 11px; border: 1px solid var(--rule); border-radius: 10px; background: var(--paper); }
 .bigv-watch > b { color: var(--ink); font-size: 11px; }
 .bigv-watch ul { margin: 5px 0 0; padding-left: 17px; }
 .bigv-watch li { color: var(--ink-soft); font-size: 10.5px; line-height: 1.75; }
@@ -1319,4 +1296,55 @@ footer strong { display: block; color: var(--ink); text-align: center; font-size
   .bigv-domain { padding: 9px; }
   .bigv-notice, .bigv-headline { font-size: 11.5px; }
   .bigv-scenario-head { flex-direction: column; }
+}
+
+/* ── 推送前 · 去 AI 味体检（Hallmark 静态闸门） ───────────────────────────── */
+.deai-card { padding-top: 12px; }
+.deai-lead { margin: 0 0 12px; color: var(--ink); font-size: 11px; line-height: 1.75; }
+.deai-lead a { color: var(--ink); text-decoration: none; border-bottom: 1px dotted var(--gray); }
+.deai-lead a:hover { background: var(--green); }
+.deai-scoreboard {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
+  padding: 11px 12px; border: 1px solid var(--rule); border-left: 4px solid var(--green);
+  border-radius: 9px; background: var(--paper-lift);
+}
+.deai-score-cell { display: flex; flex-direction: column; gap: 2px; min-width: 92px; }
+.deai-score-cell small { color: var(--ink-soft); font-size: 9.5px; line-height: 1.4; }
+.deai-score-cell b { color: var(--ink); font-size: 26px; line-height: 1.1; font-weight: 900; }
+.deai-score-arrow { color: var(--gray-dark); font-size: 18px; }
+.deai-score-delta { margin-left: auto; color: var(--ink); font-size: 11px; font-weight: 700; }
+.deai-mode-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.deai-mode-row label { color: var(--ink); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.deai-mode-row select {
+  flex: 0 1 260px; padding: 6px 8px; border: 1px solid var(--rule); border-radius: 7px;
+  background: var(--paper); color: var(--ink); font-size: 11px; font-family: inherit;
+}
+.deai-mode-note { flex: 1 1 220px; color: var(--ink-soft); font-size: 9.5px; line-height: 1.5; }
+.deai-surfaces { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.deai-surface { padding: 9px 11px; border: 1px solid var(--rule); border-radius: 9px; }
+.deai-surface-head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.deai-surface-head b { color: var(--ink); font-size: 11px; }
+.deai-surface-head span { color: var(--ink); font-size: 14px; font-weight: 900; }
+.deai-surface-state { margin: 6px 0 0; color: var(--ink-soft); font-size: 10px; line-height: 1.65; }
+.deai-findings-wrap { margin-top: 12px; }
+.deai-findings-wrap > b { color: var(--ink); font-size: 10.5px; }
+.deai-findings { margin: 6px 0 0; padding: 0; list-style: none; }
+.deai-findings li {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline;
+  padding: 6px 0; border-bottom: 1px dashed var(--rule);
+  color: var(--ink-soft); font-size: 10px; line-height: 1.6;
+}
+.deai-findings li:last-child { border-bottom: 0; }
+.deai-finding-tier { font-weight: 700; color: var(--ink); white-space: nowrap; }
+.deai-finding-tier.floor { border-left: 3px solid var(--green); padding-left: 5px; }
+.deai-finding-gate { color: var(--gray-dark); font-size: 9.5px; white-space: nowrap; }
+.deai-finding-auto { margin-left: auto; color: var(--ink-soft); font-size: 9.5px; white-space: nowrap; }
+.deai-details { margin-top: 11px; padding-top: 9px; border-top: 1px solid var(--rule); }
+.deai-details summary { color: var(--ink); font-size: 10.5px; font-weight: 700; cursor: pointer; }
+.deai-waivers { margin: 7px 0 0; padding-left: 17px; }
+.deai-waivers li { color: var(--ink-soft); font-size: 10px; line-height: 1.7; }
+.deai-boundary { margin: 8px 0 0; color: var(--ink-soft); font-size: 9.5px; line-height: 1.7; }
+@media (max-width: 520px) {
+  .deai-surfaces { grid-template-columns: 1fr; }
+  .deai-score-delta { margin-left: 0; }
 }

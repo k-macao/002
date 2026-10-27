@@ -67,6 +67,8 @@ PUSHPLUS_TOKEN=xxx python3 push_brief.py
 
 **推送前敏感词检测（违规内容不推）**：对齐《网络安全法》《互联网信息服务管理办法》《网络信息内容生态治理规定》第六条。`sensitive.py` 先按条剔除违规快讯再生成 HTML，再扫描标题 + 正文；残留命中则放弃本次推送：`push_brief.py` 退出码 4，本地服务 `POST /api/run` 返回 422。词库只覆盖法规列明的违法 / 不良信息类别，**不**编造政治人物名单，也**不**把战争、制裁、Iran、立案、骗局、Ponzi、Terrorism Risk Insurance、Drug Transit、博彩股、六合彩等正常财经 / 地缘 / 监管新闻当违规。执法、驳斥口径（打击 / 查处 / 反对 / charges）视为报道放行。排障接口 `GET /api/sensitive`。详见 `docs/sensitive_filter.md`。
 
+**推送前「去 AI 味」体检 + 改写（Hallmark 闸门）**：用 GitHub 上的 [`Nutlope/hallmark`](https://github.com/Nutlope/hallmark)（MIT）反 AI-slop 设计规则的静态子集，推送前扫描并改掉推送 HTML 里的装饰痕迹（眉标、`✦` 装饰图标、追踪大写、中点元信息、单斜体词、缺焦点环等），只改装饰层、锁住数字 / 日期 / 人名 / 引用 / 链接，签名漂移会整体回滚。闸门插在大盘新鲜度与敏感词快讯过滤之后、敏感词终检与实际 POST 之前；默认 `polish`（非阻塞），`DEAI_STRICT=1` 且仍有未修复 Floor 才拦截（`push_brief.py` 退出码 5，`POST /api/run` 返回 422）。`GET /api/hallmark`（别名 `/api/deai`）对**推送 HTML 与管理页各出一份体检报告**（可用 `?surface=push|page|all` 过滤）；管理页「推送前 · 去 AI 味体检」区可视化展示两面分数、gate 命中、保留项与方法边界，并可切换本次推送模式（`POST /api/run` body 的 `deai_mode`）。GitHub Pages 静态托管时该区保留快照文案、不发请求。详见 `docs/hallmark_deai.md`。
+
 相关环境变量（推送容量 / 测试 / 应急）：
 
 - `PUSHPLUS_MEMBER=0`：**推送容量口径**。默认即按 PushPlus 会员的 **10 万字** 上限生成（留 2,000 字符安全余量 → 98,000 字符，每个数据源最多 20 条）；普通/实名账号（2 万字上限）显式设为 `0` 即退回精选口径（19,500 字符 · 每源 3 条）。
@@ -80,6 +82,10 @@ PUSHPLUS_TOKEN=xxx python3 push_brief.py
 - `SKIP_SENSITIVE_CHECK=1`：跳过敏感词检测（测试 / 应急，不建议日常开启）。
 - `SENSITIVE_FORCE=pass|block`：强制敏感词闸门结果，用于联调测试。
 - `SENSITIVE_LEXICON=/path/to.txt`：外掛敏感词（一行一词；`block:词` 为高严重度）。
+- `DEAI_MODE=polish`：推送前「去 AI 味」闸门模式。`polish`（默认）体检 + 自动改写装饰层；`audit` 只体检不改写；`off` 跳过。前端下拉框的选择通过 `POST /api/run` 的 `deai_mode` 临时覆盖。
+- `SKIP_DEAI_CHECK=1`：跳过去 AI 味闸门（测试 / 应急）。
+- `DEAI_FORCE=pass|block`：强制去 AI 味闸门放行 / 拦截（测试 / 应急，优先于严格模式）。
+- `DEAI_STRICT=1`：改写后仍有未修复的 Floor 命中就拦截推送；默认关闭（去 AI 味是设计体检，不是合规闸门）。
 - `DEEPSEEK_API_KEY=sk-...`：**全部搜索切换到 DeepSeek Search API**（2026-10-17 开放自研搜索，`POST /v1/tools/search`，$0.75/千次成功请求、空结果免费、5 QPS）。仓库里原先经 Google News RSS 检索的 11 个源（10 个财经社区 + Reuters）与「Google news 中文」在配置后优先用 DeepSeek（`site: / lang: / after:` 算子），未配置 / 失败 / 空结果自动回退原 RSS 通道；页面底部新增「全网搜索」卡片（`GET /api/search`），另有 `GET /api/deepseek/status` 自检与 `GET|POST /api/fetch` 单页抓取（Fetch API）。GitHub Actions 加同名 Secret 即启用。配套变量：`DEEPSEEK_SEARCH_ENABLED=0`（显式禁用）、`DEEPSEEK_API_BASE_URL`（覆盖端点地址）、`DEEPSEEK_NEWS_QUERY`（覆盖中文新闻源检索词）。接入细节与成本口径见 `docs/deepseek_search.md`。
 
 数据仅供参考，不构成投资建议。
