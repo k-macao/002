@@ -5083,6 +5083,27 @@ NEWS_ITEMS_PER_SOURCE = 3
 # 卡片开关：2026-10-27 起按需求**隐藏**「全网快讯」卡片（原始快讯照常抓取，各分析栏目
 # 仍用它们统计信号）。改回 True 即恢复，卡片逻辑与测试都保留，不用重写。
 NEWS_CARD_ENABLED = False
+# 「说明 / 注解 / 解析 / 提醒」类文字：2026-10-28 起**默认不展示**。
+# 规则与清理逻辑在 meta_text.py（同一套规则也用在页面与 app.js），改回 False 即恢复原文。
+META_TEXT_ENABLED = True
+META_TEXT_HIDDEN: list = []     # 本次推送删掉的片段（供自检与测试读取）
+
+
+def _hide_meta_text(html: str) -> str:
+    """去掉卡片里的说明 / 注解 / 解析 / 提醒文字（口径、免责、缺口提示、页脚方法注）。
+
+    只在最后一层做：各栏目的 HTML 生成逻辑保持原样，规则集中在一处，改开关就能整体恢复。
+    删掉的片段记进 :data:`META_TEXT_HIDDEN`，便于自检与回归断言「确实删了东西」。
+    """
+    if not META_TEXT_ENABLED or not html:
+        return html
+    try:
+        import meta_text
+    except Exception:                      # 规则模块缺失时宁可原样输出，也不要发空推送
+        return html
+    cleaned, removed = meta_text.strip_meta_html(html)
+    META_TEXT_HIDDEN[:] = removed
+    return cleaned
 
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -5182,7 +5203,11 @@ def build_html(
     **「AI 量化日报」卡片放正文最开头**（紧随刊头，其它栏目都在它之后；见 :func:`_quant_report`）：
     量化信号是决策入口——先给权益仓位与五维结论，再往下看叙事型栏目；
     五维信号 + 权益仓位中枢 + 风险摘要；``quant`` 参数可注入已算好的报表，字符额度极紧时整段省略。
-    **「全网快讯」列表默认已隐藏**（``NEWS_CARD_ENABLED = False``，2026-10-27 起）：卡片逻辑保留，
+    **「全网快讯」列表默认已隐藏**（``NEWS_CARD_ENABLED = False
+# 「说明 / 注解 / 解析 / 提醒」类文字：2026-10-28 起**默认不展示**。
+# 规则与清理逻辑在 meta_text.py（同一套规则也用在页面与 app.js），改回 False 即恢复原文。
+META_TEXT_ENABLED = True
+META_TEXT_HIDDEN: list = []     # 本次推送删掉的片段（供自检与测试读取）``，2026-10-27 起）：卡片逻辑保留，
     打开开关后仍按下面的口径输出；隐藏期间原始快讯照常抓取，供各分析栏目统计信号。
     原来的口径是：**正文最后（免责声明与作者署名之前）追加「全网快讯」列表**：每个数据源固定保留
     :data:`NEWS_ITEMS_PER_SOURCE`（3）条，按源顺序取每源前 3 条并跨源去重，
@@ -6029,7 +6054,8 @@ f'<div class="ftr">近30日只统计已核验发文日的全球政策，已观�
             break
         out = _render_full(*plan)
 
-    return out
+    # 说明 / 注解 / 解析 / 提醒类文字整段隐藏（规则见 meta_text.py）。
+    return _hide_meta_text(out)
 
 if __name__ == "__main__":
     print(f"开始抓取 {len(SOURCES)} 个数据源…")
