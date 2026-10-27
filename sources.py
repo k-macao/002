@@ -5609,6 +5609,9 @@ META_TEXT_HIDDEN: list = []     # 本次推送删掉的片段（供自检与测�
     def _render_policy_deep(level: int) -> str:
         """「AI 政策深度」卡片：近30日全球政策发布对股市的影响，其下保留知识库 / 术语 / 舆情 / 传导 / 推理链作对照。"""
         rows = [policy_impact.render_policy_impact_rows(policy.get("market_impact") or {}, _esc, level)]
+        # 以下是对照层：解释当日情绪与历史类比，不参与窗口计分，也不改写已核验发文。
+        rows.append(_deep_hdr("当日对照 · 不计入窗口发文",
+                              "知识库 / 术语 / 舆情 / 传导 / 推理链只做解释，不改窗口分"))
         rows.append(_deep_hdr("政策法规知识库检索", kb.get("note") or "先检索历史政策，再做对比分析"))
         for rank, hit in enumerate(kb.get("hits") or [], 1):
             rows.append(
@@ -5675,13 +5678,16 @@ META_TEXT_HIDDEN: list = []     # 本次推送删掉的片段（供自检与测�
                         f'<div>{_hl_policy(step["text"])}</div>{evidence_html}</td></tr>')
 
         impact = policy.get("market_impact") or {}
-        n_rel = (impact.get("counts") or {}).get("in_window", 0)
-        window = impact.get("window_label") or "近30日"
+        counts = impact.get("counts") or {}
+        n_rel = counts.get("in_window", 0)
+        n_carry = counts.get("carry", 0)
+        window = impact.get("window_label") or "近30日日"
         return (
             f'<div class="card"><div class="hdr"><span class="tag">AI 政策深度</span>'
-            f'<span class="sub">近{impact.get("days", 30)}日 · {n_rel} 项已核验 · {window}</span></div>'
+            f'<span class="sub">近{impact.get("days", 30)}日 · 新发文 {n_rel} · 存量生效 {n_carry} · {window}</span></div>'
             f'<table class="tbl-sub">{"".join(rows)}</table>'
-f'<div class="ftr">近30日只统计已核验发文日的全球政策，已观测收盘反应与机制推演分开，不外推未报道的指数点位。'
+            f'<div class="ftr">近30日只统计已核验发文日的全球政策；窗口外但影响期未走完的按半权列入「存量政策」，'
+            f'与新发文分开列示。已观测收盘反应与机制推演分开，不外推未报道的指数点位。'
             f'下方知识库只展示文件元数据与标题，术语口径仅展示汇总判断，舆情按正向 / 中性 / 负向即时打分，均用于对照、不替代窗口内发文。'
             f'数据仅供参考，不作为投资依据。</div></div>'
         )
