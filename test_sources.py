@@ -1452,6 +1452,92 @@ class PolicyMarketImpactTest(unittest.TestCase):
         self.assertIn("政策法规知识库检索", deep)
 
 
+class PolicyCarryLayerTest(unittest.TestCase):
+    """「AI 政策深度」内容逻辑：窗口内新发文 + 仍在生效的存量 + 已到期说明，三层各算各的。"""
+
+    def impact(self, as_of):
+        return sources.policy_impact.analyze_policy_market_impact(as_of=as_of)
+
+    def test_horizon_days_are_explicit(self):
+        pi = sources.policy_impact
+        release = next(item for item in pi._POLICY_RELEASES if item["id"] == "PBC-HOUSING-20260828")
+        self.assertEqual(pi.horizon_days(release), 180)       # 1-6 个月
+        self.assertEqual(pi.active_until(release).isoformat(), "2027-02-24")
+        self.assertEqual(pi.horizon_days({"horizon": "没写"}), 30)   # 缺失按最短假设处理
+
+    def test_empty_window_falls_back_to_carry_layer(self):
+        # 2026-10-28：窗口内 0 项新发文，但台账里 7 项影响期未走完。
+        out = self.impact(date(2026, 10, 28))
+        self.assertEqual(out["counts"]["in_window"], 0)
+        self.assertEqual(out["counts"]["carry"], 7)
+        self.assertTrue(out["carry_releases"])
+        self.assertIn("没有新核验的全球政策发布", out["headline"])
+        self.assertIn("存量政策仍在生效", out["headline"])
+        for market in out["markets"]:
+            self.assertNotEqual(market["bias"], "—")
+            self.assertEqual(market["state"], "carry")
+            self.assertEqual(market["score_window"], 0)
+            self.assertNotEqual(market["score"], 0)
+            self.assertIn("存量", market["reading"])
+            self.assertNotIn("机制推演，不外推", market["reading"])
+
+    def test_expired_policies_are_listed_but_not_scored(self):
+        out = self.impact(date(2026, 10, 28))
+        lapsed_ids = {item["id"] for item in out["lapsed_releases"]}
+        self.assertIn("FED-JH-20260828", lapsed_ids)          # 2-6 周，10 月上旬到期
+        self.assertIn("PBC-LPR-20260920", lapsed_ids)         # 1-4 周，10 月中旬到期
+        carry_ids = {item["id"] for item in out["carry_releases"]}
+        self.assertFalse(lapsed_ids & carry_ids)
+        # 已到期的讲话不再给美股加分：美股只由仍在生效的加息路径决定。
+        self.assertLess(out["markets"][2]["score"], 0)
+        self.assertFalse(any(item["score"] == 0 and item["id"] in lapsed_ids
+                             for item in out["carry_releases"]))
+
+    def test_carry_is_half_weight_and_separately_labelled(self):
+        window = self.impact(date(2026, 9, 23))     # 全在新发文里
+        carry = self.impact(date(2026, 10, 28))     # 全在存量里
+        self.assertTrue(all(market["score_carry"] == 0 for market in window["markets"]))
+        self.assertTrue(all(market["score_window"] == 0 for market in carry["markets"]))
+        # 存量按半权：同样的美联储加息，存量给出的美股压制分明显小于窗口内的全额。
+        self.assertLess(abs(carry["markets"][2]["score"]), abs(window["markets"][2]["score"]))
+        self.assertGreater(abs(carry["markets"][2]["score"]), 0.5)
+
+    def test_themes_merge_same_topic(self):
+        out = self.impact(date(2026, 10, 28))
+        themes = {item["theme"]: item for item in out["themes"]}
+        self.assertIn("海外货币收紧", themes)
+        self.assertGreaterEqual(themes["海外货币收紧"]["carry"], 3)
+        self.assertEqual(themes["海外货币收紧"]["direction"], "压制")
+        self.assertIn("国内地产金融", themes)
+        self.assertEqual(themes["国内地产金融"]["direction"], "支撑")
+        self.assertEqual(themes["海外货币收紧"]["window"], 0)
+        # 主线按绝对影响排序，第一条必须是压制最重的那条。
+        self.assertEqual(out["themes"][0]["theme"], "海外货币收紧")
+
+    def test_no_ledger_side_effects(self):
+        first = self.impact(date(2026, 10, 28))
+        second = self.impact(date(2026, 10, 28))
+        self.assertEqual(first["markets"], second["markets"])
+        self.assertEqual(first["carry_releases"], second["carry_releases"])
+
+    def test_card_shows_three_layers(self):
+        out = self.impact(date(2026, 10, 28))
+        html = sources.policy_impact.render_policy_impact_rows(out, sources._esc, 2)
+        for token in ("主线归并", "窗口内政策发布", "存量政策仍在生效",
+                      "窗口内已到期", "板块传导", "新发文 +0.00"):
+            self.assertIn(token, html)
+        self.assertNotIn("机制推演，不外推点位", html)   # 空窗口不再自相矛盾
+
+    def test_page_section_uses_same_impact(self):
+        out = self.impact(date(2026, 10, 28))
+        html = sources.policy_impact.page_section_html(out)
+        for token in ('id="policyDeepHeadline"', 'id="policyDeepBoard"', 'id="policyDeepList"',
+                      "存量政策仍在生效", "主线归并"):
+            self.assertIn(token, html)
+        self.assertEqual(html.count("<section"), 1)
+        self.assertEqual(html.count("</section>"), 1)
+
+
 class BuildHtmlTest(_NewsCardOn, unittest.TestCase):
 
     def _kanpan(self):

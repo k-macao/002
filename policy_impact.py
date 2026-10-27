@@ -22,6 +22,17 @@ _KIND_WEIGHT = {"发布": 1.0, "信号": 0.65, "生效": 0.75}
 _MAG_WEIGHT = {"高": 1.4, "中": 1.0, "低": 0.6}
 # 同一主题、同一方向每多一条，只加确认项，避免同日组合拳把指数分乘三倍。
 _CONFIRM = 0.22
+# 台账条目的影响期（自然日）：发文日 + 该天数内视为仍在生效，供「存量政策」层使用。
+# 只用于判断「这条政策还管不管用」，不改变发文日在窗口内的计分。
+_HORIZON_DAYS = {
+    "数日": 7, "数周": 28,
+    "1-4 周": 28, "1-6 周": 42, "2-6 周": 42, "1-8 周": 56,
+    "1-4 个月": 120, "1-6 个月": 180, "1-6 周 ": 42,
+    "3-12 个月": 365, "6-24 个月": 730, "6-36 个月": 1095, "12-36 个月": 1095,
+}
+_DEFAULT_HORIZON_DAYS = 30
+# 存量政策按半权计入：方向仍然有效，但不代表当日强弱，也不与新发文混成一个不可拆的分。
+_CARRY_DECAY = 0.5
 # 指数分 → 标签。与多空板块的 60/40 不是同一套口径，这里专用于政策窗口。
 _BIAS_HI = 1.2
 _BIAS_LO = 0.45
@@ -289,6 +300,32 @@ _POLICY_RELEASES = [
 ]
 
 
+def _release_date(release: dict) -> date:
+    return datetime.strptime(str(release.get("date") or "")[:10], "%Y-%m-%d").date()
+
+
+def horizon_days(release: dict) -> int:
+    """影响期天数：台账里每条都声明了 horizon，缺失时按 30 天处理（不臆造更长的影响）。"""
+    return _HORIZON_DAYS.get(str(release.get("horizon") or "").strip(), _DEFAULT_HORIZON_DAYS)
+
+
+def active_until(release: dict) -> date:
+    """这份政策「还管到哪天」。窗口外发文只要没过这个日期，就是仍在生效的存量。"""
+    return _release_date(release) + timedelta(days=horizon_days(release))
+
+
+def _span_text(days: int) -> str:
+    """剩余 / 已过天数的可读写法：超过 3 个月按「约 N 个月」，避免「剩 1048 天」这种噪声。"""
+    days = int(days or 0)
+    return f"{days} 天" if days < 90 else f"约 {max(1, round(days / 30))} 个月"
+
+
+def _remaining_text(days: int) -> str:
+    """「剩 N 天 / 剩约 N 个月」：数字前留空格，约数不加空格，避免「剩 约 4 个月」这种拼接痕迹。"""
+    text = _span_text(days)
+    return f"剩 {text}" if text[:1].isdigit() else f"剩{text}"
+
+
 def _keyword_hit(title: str, keyword: str) -> bool:
     """ASCII 词按单词边界，中文按子串。与政策维度词库同一原则，避免 FedEx 误伤。"""
     if not title or not keyword:
@@ -354,9 +391,23 @@ def _stock_line(release: dict) -> str:
     return "；".join(bits)
 
 
-def _market_reading(name: str, bias: str, support: list[str], pressure: list[str], observed: bool) -> str:
+def _market_reading(name: str, bias: str, support: list[str], pressure: list[str], observed: bool,
+                    state: str = "window", carry_score: float = 0.0) -> str:
+    """三市结论句。
+
+    ``state`` 区分三种情形，避免「窗口内什么都没有」时还写「机制推演」自相矛盾：
+    - ``window``：窗口内有新发文，按发文方向推演；
+    - ``carry``：窗口内没有新发文，只有按影响期仍在生效的存量政策；
+    - ``empty``：两者都没有，直接说不外推。
+    """
     sup = "、".join(support[:3]) or "无明显受益方向"
     pre = "、".join(pressure[:3]) or "无明显承压方向"
+    if state == "empty":
+        return f"{name}窗口内没有新发文，也没有仍在生效的存量政策，不外推方向。"
+    if state == "carry":
+        head = (f"{name}近30日没有新发文，{bias}来自仍在生效的存量政策（按半权计入），"
+                "属方向延续，不代表当日强弱。")
+        return f"{head}受益看{sup}；承压看{pre}。"
     if observed:
         head = f"{name}{bias}，且含已观测的收盘反应。"
     elif bias == "中性" and support and pressure:
@@ -365,26 +416,64 @@ def _market_reading(name: str, bias: str, support: list[str], pressure: list[str
         head = f"{name}指数层面中性。"
     else:
         head = f"{name}指数层面{bias}，属机制推演，不外推点位。"
-    return f"{head}受益看{sup}；承压看{pre}。"
+    tail = ""
+    if carry_score:
+        tail = f"另有存量政策 {carry_score:+.2f} 分按半权计入，只说明这条线还有余温。"
+    return f"{head}受益看{sup}；承压看{pre}。{tail}"
 
 
 def _headline(payload: dict) -> str:
+    """卡片首句（约 100 字）：先给「窗口内有没有新发文」，再给三市方向与存量补充。"""
+    markets_txt = "、".join(f"{item['name']}{item['bias']}" for item in payload["markets"])
+    carry = payload.get("carry_releases") or []
     if not payload["releases"]:
-        return (f"近{payload['days']}日（{payload['window_label']}）没有已核验的全球政策发布，"
-                "不外推对股票市场的影响。")
+        if not carry:
+            return (f"近{payload['days']}日（{payload['window_label']}）没有已核验的全球政策发布，"
+                    "也没有仍在生效的存量政策，不外推对股票市场的影响。")
+        latest = payload.get("latest_any_release") or ""
+        gap = payload.get("days_since_latest")
+        when = f"最近一次 {latest[5:].replace('-', '/')}" if latest else "台账内最近一次"
+        return (f"近{payload['days']}日（{payload['window_label']}）没有新核验的全球政策发布；"
+                f"{len(carry)} 项存量政策仍在生效（{when}"
+                + (f"，距今 {gap} 天" if isinstance(gap, int) else "")
+                + f"），按半权给出方向：三市 {markets_txt}。方向延续不等于当日强弱。")
     counts = payload["counts"]
-    bits = [f"{counts['发布']}项正式发布"]
+    bits = [f"{counts['发布']} 项正式发布"]
     if counts["信号"]:
-        bits.append(f"{counts['信号']}项政策信号")
+        bits.append(f"{counts['信号']} 项政策信号")
     if counts["生效"]:
-        bits.append(f"{counts['生效']}项窗口内生效")
-    text = f"近{payload['days']}日（{payload['window_label']}）核验" + "、".join(bits)
+        bits.append(f"{counts['生效']} 项窗口内生效")
+    text = f"近{payload['days']}日（{payload['window_label']}）核验 " + "、".join(bits)
     if payload["pressure_events"]:
         text += "。压制主线：" + "、".join(item["short"] for item in payload["pressure_events"][:2])
     if payload["support_events"]:
         text += "。对冲支撑：" + "、".join(item["short"] for item in payload["support_events"][:2])
-    text += "。三市：" + "、".join(f"{item['name']}{item['bias']}" for item in payload["markets"])
-    return text + "。已观测与机制推演分开，不外推未报道的指数点位。"
+    text += "。三市：" + markets_txt
+    text += "。已观测与机制推演分开，不外推未报道的指数点位。"
+    if carry:
+        text += f"另有 {len(carry)} 项存量政策仍在生效，按半权计入。"
+    return text
+
+
+def _score_layer(releases: list, market: str, weight: float = 1.0) -> float:
+    """一层政策（新发文 / 存量）对某市场的指数分。
+
+    同一主题、同一方向只取最强一条，其余按 +0.22 记确认项，避免同日组合拳把指数分乘三倍。
+    ``weight`` 用于存量层整体打折。
+    """
+    groups: dict[tuple, list] = {}
+    for release in releases:
+        contrib = _contrib(release, market)
+        if not contrib:
+            continue
+        sign = 1 if contrib > 0 else -1
+        groups.setdefault((release["theme"], sign), []).append(contrib)
+    total = 0.0
+    for items in groups.values():
+        items.sort(key=abs, reverse=True)
+        sign = 1 if items[0] > 0 else -1
+        total += items[0] + _CONFIRM * sign * (len(items) - 1)
+    return total * weight
 
 
 def analyze_policy_market_impact(brief: dict | None = None, as_of=None,
@@ -397,30 +486,31 @@ def analyze_policy_market_impact(brief: dict | None = None, as_of=None,
     start, end = policy_window_bounds(as_of, days)
     in_window, outside = [], []
     for release in _POLICY_RELEASES:
-        stamp = datetime.strptime(release["date"], "%Y-%m-%d").date()
+        stamp = _release_date(release)
         (in_window if start <= stamp <= end else outside).append(release)
+    # 存量层：发文在窗口之前、但影响期（horizon）还没走完的政策。
+    # 没有这一层，窗口一旦空转，整张卡片就只剩「没有发文」——而市场显然还在交易这些政策。
+    # 两层要分开：今天仍在生效的存量才按半权计分；窗口前段生效、现在已经到期的只做说明，
+    # 不再计入指数分——否则 8 月的一次讲话会一直「影响」到年底。
+    # 只算「窗口开始时已经发文」的政策：台账里晚于窗口的发文不能倒推成历史影响。
+    published = [release for release in outside if _release_date(release) < start]
+    carry = [release for release in published if active_until(release) >= end]
+    lapsed = [release for release in published if start <= active_until(release) < end]
+    # 存量清单按「对三市的影响大小」排：读者先看到还在压着指数的政策，而不是年限最长的那条。
+    carry.sort(key=lambda item: (abs(sum(_contrib(item, market) for market in POLICY_MARKETS)),
+                                 item["date"]), reverse=True)
+    lapsed.sort(key=lambda item: item["date"], reverse=True)
     # 同一天里高量级在前；量级相同则保持台账顺序，结果可复算。
     in_window.sort(key=lambda item: (item["date"], {"高": 3, "中": 2, "低": 1}.get(item["magnitude"], 0)),
                    reverse=True)
 
-    # 主题 × 方向：取最强一条，同向其余条目只加确认项。
-    groups: dict[tuple, list] = {}
-    for release in in_window:
-        for market in POLICY_MARKETS:
-            contrib = _contrib(release, market)
-            if not contrib:
-                continue
-            sign = 1 if contrib > 0 else -1
-            groups.setdefault((market, release["theme"], sign), []).append((contrib, release))
-
-    scores = {market: 0.0 for market in POLICY_MARKETS}
-    for (market, _theme, sign), items in groups.items():
-        items.sort(key=lambda pair: abs(pair[0]), reverse=True)
-        scores[market] += items[0][0] + _CONFIRM * sign * (len(items) - 1)
+    # 指数分拆两层：窗口内新发文全额，存量按半权；两层各自可复算，也各自可解释。
+    scores = {market: _score_layer(in_window, market) for market in POLICY_MARKETS}
+    scores_carry = {market: _score_layer(carry, market, _CARRY_DECAY) for market in POLICY_MARKETS}
 
     sector_acc = {market: {} for market in POLICY_MARKETS}
     observed = {market: False for market in POLICY_MARKETS}
-    for release in in_window:
+    for release, layer_weight in [(item, 1.0) for item in in_window] + [(item, _CARRY_DECAY) for item in carry]:
         kind = _KIND_WEIGHT.get(release["kind"], 1.0)
         mag = _MAG_WEIGHT.get(release["magnitude"], 1.0)
         for market in POLICY_MARKETS:
@@ -432,23 +522,34 @@ def analyze_policy_market_impact(brief: dict | None = None, as_of=None,
                 if not sdir:
                     continue
                 name = sector["name"]
-                sector_acc[market][name] = sector_acc[market].get(name, 0.0) + sdir * cell["weight"] * kind * mag
+                sector_acc[market][name] = (sector_acc[market].get(name, 0.0)
+                                            + sdir * cell["weight"] * kind * mag * layer_weight)
 
     markets = []
     for market in POLICY_MARKETS:
         ranked = sorted(sector_acc[market].items(), key=lambda pair: pair[1], reverse=True)
         support = [name for name, score in ranked if score >= 0.2][:3]
         pressure = [name for name, score in sorted(sector_acc[market].items(), key=lambda pair: pair[1]) if score <= -0.2][:3]
-        bias = _bias_label(scores[market]) if in_window else "—"
+        total = scores[market] + scores_carry[market]
+        active = bool(in_window or carry)
+        state = "empty" if not active else ("window" if in_window else "carry")
+        bias = _bias_label(total) if active else "—"
         markets.append({
             "name": market,
             "bias": bias,
-            "score": round(scores[market], 3),
+            "score": round(total, 3),
+            "score_window": round(scores[market], 3),
+            "score_carry": round(scores_carry[market], 3),
+            "bias_window": _bias_label(scores[market]) if in_window else "—",
+            "bias_carry": _bias_label(scores_carry[market]) if carry else "—",
+            "state": state,
+            "window_count": sum(1 for item in in_window if _contrib(item, market)),
+            "carry_count": sum(1 for item in carry if _contrib(item, market)),
             "observed": observed[market],
             "support": support,
             "pressure": pressure,
-            "reading": _market_reading(market, bias if bias != "—" else "中性", support, pressure, observed[market])
-            if in_window else f"{market}窗口内无已核验政策，不外推。",
+            "reading": _market_reading(market, bias if bias != "—" else "中性", support, pressure,
+                                       observed[market], state, scores_carry[market]),
         })
 
     def _event_score(release: dict) -> float:
@@ -486,6 +587,70 @@ def analyze_policy_market_impact(brief: dict | None = None, as_of=None,
             "source_note": release["source_note"],
             "score": round(_event_score(release), 3),
             "mentions": _mentions(brief, release),
+            "layer": "新发文",
+            "days_ago": max(0, (end - _release_date(release)).days),
+            "active": active_until(release) >= end,
+            "active_until": active_until(release).isoformat(),
+            "remaining_days": max(0, (active_until(release) - end).days),
+        })
+
+    carry_releases = []
+    for release in carry:
+        carry_releases.append({
+            "id": release["id"], "date": release["date"], "issuer": release["issuer"],
+            "jurisdiction": release["jurisdiction"], "doctype": release["doctype"],
+            "kind": release["kind"], "topic": release["topic"], "dimension": release["dimension"],
+            "theme": release["theme"], "stance": release["stance"], "magnitude": release["magnitude"],
+            "horizon": release["horizon"], "title": release["title"], "short": release["short"],
+            "summary": release["summary"], "stock_line": _stock_line(release),
+            "cross_asset": release.get("cross_asset") or "", "source": release["source"],
+            "source_note": release["source_note"],
+            # 存量按半权计入，这里给的是「按半权后的三市合成分」，不是新发文的原始贡献。
+            "score": round(sum(_contrib(release, market) for market in POLICY_MARKETS) * _CARRY_DECAY, 3),
+            "mentions": _mentions(brief, release),
+            "layer": "存量",
+            "days_ago": max(0, (end - _release_date(release)).days),
+            "active": True,
+            "active_until": active_until(release).isoformat(),
+            "remaining_days": max(0, (active_until(release) - end).days),
+        })
+
+    # 主线归并：同一主题的窗口内发文 + 存量合成一条主线，读者先看「哪几条线在推」而不是 10 条流水。
+    theme_acc: dict[str, dict] = {}
+    for release in in_window:
+        row = theme_acc.setdefault(release["theme"], {
+            "theme": release["theme"], "window": 0, "carry": 0, "net": 0.0,
+            "shorts": [], "markets": [],
+        })
+        row["window"] += 1
+        row["net"] += _event_score(release)
+        if release["short"] not in row["shorts"]:
+            row["shorts"].append(release["short"])
+        for market in POLICY_MARKETS:
+            if _contrib(release, market) and market not in row["markets"]:
+                row["markets"].append(market)
+    for release in carry:
+        row = theme_acc.setdefault(release["theme"], {
+            "theme": release["theme"], "window": 0, "carry": 0, "net": 0.0,
+            "shorts": [], "markets": [],
+        })
+        row["carry"] += 1
+        row["net"] += _event_score(release) * _CARRY_DECAY
+        if release["short"] not in row["shorts"]:
+            row["shorts"].append(release["short"])
+        for market in POLICY_MARKETS:
+            if _contrib(release, market) and market not in row["markets"]:
+                row["markets"].append(market)
+    themes = []
+    for row in sorted(theme_acc.values(), key=lambda item: abs(item["net"]), reverse=True):
+        themes.append({
+            "theme": row["theme"],
+            "window": row["window"],
+            "carry": row["carry"],
+            "net": round(row["net"], 3),
+            "direction": "压制" if row["net"] <= -0.2 else ("支撑" if row["net"] >= 0.2 else "对冲"),
+            "shorts": row["shorts"][:2],
+            "markets": row["markets"],
         })
 
     counts = {
@@ -494,18 +659,32 @@ def analyze_policy_market_impact(brief: dict | None = None, as_of=None,
         "信号": sum(item["kind"] == "信号" for item in releases),
         "生效": sum(item["kind"] == "生效" for item in releases),
         "outside": len(outside),
+        "carry": len(carry_releases),
+        "lapsed": len(lapsed),
     }
     latest = releases[0]["date"] if releases else ""
+    latest_any = max((item["date"] for item in _POLICY_RELEASES), default="")
+    days_since_latest = ((end - datetime.strptime(latest_any, "%Y-%m-%d").date()).days
+                         if latest_any else None)
     if latest and latest < end.isoformat():
-        gap_note = (f"窗口截止 {end.isoformat()}，最新已核验发文是 {latest}。"
+        gap_note = (f"窗口截止 {end.isoformat()}，窗口内最新已核验发文是 {latest}。"
                     "此后没有写入台账的新发文；未核实日期的快讯不当成政策发布。")
     elif not releases:
-        gap_note = "该窗口没有已核验发文。未核实日期的快讯不编造成政策发布。"
+        gap_note = f"窗口 {start.isoformat()} 至 {end.isoformat()} 没有已核验发文。未核实日期的快讯不编造成政策发布。"
     else:
         gap_note = "窗口内发文均已核验日期。未核实日期的快讯不当成政策发布。"
+    if latest_any:
+        gap_note += (f"台账最近一次发文是 {latest_any}"
+                     + (f"（距今 {days_since_latest} 天）" if isinstance(days_since_latest, int) else "")
+                     + "。")
+    if carry_releases:
+        gap_note += (f"其中 {len(carry_releases)} 项发文在窗口之前、影响期今天仍在，"
+                     "按半权计入「存量政策」层。")
+    if lapsed:
+        gap_note += f"另有 {len(lapsed)} 项在窗口前段生效、现已到期，只做说明、不计分。"
     if outside:
         sample = min(outside, key=lambda item: item["date"])
-        gap_note += f"台账另有 {len(outside)} 条在窗口外（如 {sample['date']} {sample['short']}），不重复计入。"
+        gap_note += f"窗口外另有 {len(outside)} 条（最早 {sample['date']} {sample['short']}），不重复计为新发文。"
 
     sector_board = {"support": [], "pressure": []}
     folded: dict[str, dict] = {}
@@ -536,9 +715,19 @@ def analyze_policy_market_impact(brief: dict | None = None, as_of=None,
         "releases": releases,
         "pressure_events": pressure_events,
         "support_events": support_events,
+        "carry_releases": carry_releases,
+        "lapsed_releases": [
+            {"id": item["id"], "date": item["date"], "short": item["short"],
+             "issuer": item["issuer"], "active_until": active_until(item).isoformat(),
+             "days_ago": max(0, (end - _release_date(item)).days)}
+            for item in lapsed
+        ],
+        "themes": themes,
         "sector_board": sector_board,
         "gap_note": gap_note,
         "latest_release": latest,
+        "latest_any_release": latest_any,
+        "days_since_latest": days_since_latest,
         "ledger_from": min(item["date"] for item in _POLICY_RELEASES),
         "ledger_to": max(item["date"] for item in _POLICY_RELEASES),
         "method": (
@@ -554,9 +743,20 @@ def analyze_policy_market_impact(brief: dict | None = None, as_of=None,
     return payload
 
 
+_STATE_NOTE = {
+    "empty": "窗口内无新发文，也无存量政策，不外推",
+    "carry": "仅存量政策仍生效，按半权计入",
+}
+
+
 def render_policy_impact_rows(impact: dict | None, esc, level: int = 2) -> str:
-    """推送卡片用的表格行。``esc`` 为 HTML 转义函数。"""
+    """推送卡片用的表格行。``esc`` 为 HTML 转义函数。
+
+    结构固定为：结论（主线 + 三市）→ 窗口内新发文 → 存量仍生效 → 板块传导。
+    每一层都标清「这几分是谁给的」，读者不会把存量余温当成当日新催化。
+    """
     impact = impact or {}
+
     def tag(text: str, cls: str = "tag") -> str:
         return f'<span class="{cls}">{esc(text)}</span>'
 
@@ -567,9 +767,17 @@ def render_policy_impact_rows(impact: dict | None, esc, level: int = 2) -> str:
             return "tag"
         return "tag-w"
 
+    def layer_note(market: dict) -> str:
+        if market.get("state") in _STATE_NOTE:
+            return _STATE_NOTE[market["state"]]
+        return "含已观测收盘反应" if market.get("observed") else "机制推演，不外推点位"
+
+    counts = impact.get("counts") or {}
+    carry = impact.get("carry_releases") or []
     rows = [
         f'<tr><td colspan="2" class="td-hdr">{tag("近30日全球政策 → 股市影响")} '
-        f'<span class="sub">{esc(impact.get("window_label") or "含当日的近30个自然日")}</span></td></tr>'
+        f'<span class="sub">{esc(impact.get("window_label") or "含当日的近30个自然日")}，'
+        f'新发文 {counts.get("in_window", 0)} 项，存量生效 {counts.get("carry", 0)} 项</span></td></tr>'
     ]
     if not impact:
         rows.append('<tr><td colspan="2" class="sub" style="padding:6px 0;">政策窗口影响未计算。</td></tr>')
@@ -581,26 +789,47 @@ def render_policy_impact_rows(impact: dict | None, esc, level: int = 2) -> str:
     for market in impact.get("markets") or []:
         support = "、".join(market.get("support") or []) or "—"
         pressure = "、".join(market.get("pressure") or []) or "—"
-        obs = "含已观测收盘反应" if market.get("observed") else "机制推演，不外推点位"
         score = market.get("score", 0)
         score_txt = f"{score:+.2f}" if isinstance(score, (int, float)) else "—"
+        split = ""
+        if market.get("state") != "empty":
+            win = market.get("score_window", 0) or 0
+            car = market.get("score_carry", 0) or 0
+            split = f"（新发文 {win:+.2f} / 存量 {car:+.2f}）"
         rows.append(
             f'<tr><td class="td-n">{esc(market.get("name") or "")}</td><td class="td-t">'
             f'<div>{tag(market.get("bias") or "—", bias_cls(market.get("bias") or ""))} '
-            f'<span class="sub">指数分 {esc(score_txt)} · {esc(obs)}</span></div>'
+            f'<span class="sub">指数分 {esc(score_txt)}{esc(split)}，{esc(layer_note(market))}</span></div>'
             f'<div class="ev">受益：{esc(support)}　承压：{esc(pressure)}</div>'
             + (f'<div class="ev">{esc(market.get("reading") or "")}</div>' if level > 1 else "")
             + "</td></tr>"
         )
+    themes = impact.get("themes") or []
+    if themes and level > 0:
+        lines = []
+        for item in themes[:4 if level > 1 else 2]:
+            cls = "tag-d" if item.get("direction") == "压制" else ("tag" if item.get("direction") == "支撑" else "tag-w")
+            src = " / ".join(part for part in (
+                f"新 {item.get('window', 0)}" if item.get("window") else "",
+                f"存量 {item.get('carry', 0)}" if item.get("carry") else "") if part)
+            lines.append(
+                f'<div class="ev">{tag(item.get("direction") or "", cls)} {esc(item.get("theme") or "")}'
+                f'　<span class="sub">{esc(src)}，合成分 {item.get("net", 0):+.2f}</span>'
+                + (f'　{esc("、".join(item.get("shorts") or []))}' if level > 1 and item.get("shorts") else "")
+                + "</div>"
+            )
+        rows.append(f'<tr><td class="td-n">主</td><td class="td-t"><div>{tag("主线归并", "tag-w")}'
+                    f'　<span class="sub">同主题合并，存量按半权，三市合成分</span></div>{"".join(lines)}</td></tr>')
+
     releases = impact.get("releases") or []
-    counts = impact.get("counts") or {}
     rows.append(
         f'<tr><td colspan="2" class="td-hdr">{tag("窗口内政策发布")} '
-        f'<span class="sub">{counts.get("in_window", 0)} 项已核验 · 新的在前 · '
+        f'<span class="sub">{counts.get("in_window", 0)} 项已核验，新的在前，'
         f'正式 {counts.get("发布", 0)} / 信号 {counts.get("信号", 0)} / 生效 {counts.get("生效", 0)}</span></td></tr>'
     )
     if not releases:
-        rows.append(f'<tr><td colspan="2" class="sub" style="padding:6px 0;">{esc(impact.get("gap_note") or "窗口内无已核验政策发布。")}</td></tr>')
+        rows.append(f'<tr><td colspan="2" class="sub" style="padding:6px 0;">'
+                    f'{esc(impact.get("gap_note") or "窗口内无已核验政策发布。")}</td></tr>')
     limit_n = len(releases) if level > 1 else min(4, len(releases))
     for rank, item in enumerate(releases[:limit_n], 1):
         kind_cls = "tag-d" if item.get("stance") == "偏鹰" else ("tag" if item.get("stance") == "偏鸽" else "tag-w")
@@ -608,9 +837,10 @@ def render_policy_impact_rows(impact: dict | None, esc, level: int = 2) -> str:
         if level > 1 and item.get("mentions"):
             mention = "；".join(esc(hit.get("title") or "") for hit in item["mentions"][:1])
             mention = f'<div class="ev">当日快讯仍在定价：{mention}</div>'
+        expired = "" if item.get("active", True) else f' <span class="tag-d">影响期已过</span>'
         rows.append(
             f'<tr><td class="td-n">{rank:02d}</td><td class="td-t">'
-            f'<div>{tag((item.get("date") or "")[5:])} {tag(item.get("kind") or "", kind_cls)} '
+            f'<div>{tag((item.get("date") or "")[5:])} {tag(item.get("kind") or "", kind_cls)}{expired} '
             f'<span class="sub">{esc(item.get("issuer") or "")} · {esc(item.get("jurisdiction") or "")} · '
             f'{esc(item.get("topic") or "")} · {esc(item.get("horizon") or "")}</span></div>'
             f'<div>{esc(item.get("title") or "")}</div>'
@@ -620,12 +850,43 @@ def render_policy_impact_rows(impact: dict | None, esc, level: int = 2) -> str:
             + mention
             + "</td></tr>"
         )
+
+    if carry and level > 0:
+        rows.append(
+            f'<tr><td colspan="2" class="td-hdr">{tag("存量政策仍在生效", "tag-w")} '
+            f'<span class="sub">{len(carry)} 项，发文早于窗口、影响期未走完，按半权计入</span></td></tr>'
+        )
+        limit_c = len(carry) if level > 1 else min(3, len(carry))
+        for rank, item in enumerate(carry[:limit_c], 1):
+            kind_cls = "tag-d" if item.get("stance") == "偏鹰" else ("tag" if item.get("stance") == "偏鸽" else "tag-w")
+            rows.append(
+                f'<tr><td class="td-n">{rank:02d}</td><td class="td-t">'
+                f'<div>{tag((item.get("date") or "")[5:])} {tag(item.get("kind") or "", kind_cls)} '
+                f'<span class="sub">已过 {_span_text(item.get("days_ago", 0))}，影响期至 {esc(item.get("active_until") or "")}'
+                f'（{_remaining_text(item.get("remaining_days", 0))}），{esc(item.get("issuer") or "")}</span></div>'
+                f'<div>{esc(item.get("short") or item.get("title") or "")}</div>'
+                f'<div class="ev">{esc(item.get("stock_line") or "")}</div>'
+                + (f'<div class="ev">{esc(item.get("summary") or "")}</div>' if level > 1 else "")
+                + "</td></tr>"
+            )
+        if len(carry) > limit_c:
+            rows.append(f'<tr><td colspan="2" class="sub" style="padding:4px 0;">'
+                        f'另有 {len(carry) - limit_c} 项存量政策未逐条列出，完整清单见 /api/policy。</td></tr>')
+    lapsed = impact.get("lapsed_releases") or []
+    if lapsed:
+        text = "、".join(f'{esc(item.get("date", "")[5:])} {esc(item.get("short") or "")}' for item in lapsed[:4])
+        rows.append(f'<tr><td class="td-n">·</td><td class="td-t"><div>'
+                    f'{tag("窗口内已到期", "tag-w")} '
+                    f'<span class="sub">窗口前段生效、现已过期，不计分</span></div>'
+                    f'<div class="ev">{text}</div></td></tr>')
+
     board = impact.get("sector_board") or {}
     if level > 1:
         rows.append(
             f'<tr><td colspan="2" class="td-hdr">{tag("板块传导")} '
-            f'<span class="sub">跨政策加总 · 不是指数点位</span></td></tr>'
+            f'<span class="sub">跨政策加总，含存量半权，不是指数点位</span></td></tr>'
         )
+
         def _sec_line(rows_in: list, label: str, cls: str) -> str:
             if not rows_in:
                 return ""
@@ -651,6 +912,147 @@ def render_policy_impact_rows(impact: dict | None, esc, level: int = 2) -> str:
         f' 以下历史知识库与推理链是对照，不计入近30日发文。</td></tr>'
     )
     return "".join(rows)
+
+
+def page_section_html(impact: dict | None, as_of: str = "") -> str:
+    """页面版「AI 政策深度」区块（index.html 静态快照与 app.js 运行时同一套结构）。
+
+    页面快照过去是手写的，很容易和引擎口径漂移；改成由同一个 impact 生成后，
+    「静态预览」和「实时结果」至少在结构上不会各说一套。
+    """
+    import html as _h
+
+    impact = impact or {}
+
+    def esc(text) -> str:
+        return _h.escape(str(text if text is not None else ""), quote=True)
+
+    def cell_cls(bias: str) -> str:
+        if "空" in (bias or ""):
+            return "press"
+        if "多" in (bias or ""):
+            return ""
+        return "neutral"
+
+    def chip(text: str, press: bool = False) -> str:
+        return f'<mark class="press">{esc(text)}</mark>' if press else f'<mark>{esc(text)}</mark>'
+
+    counts = impact.get("counts") or {}
+    markets = impact.get("markets") or []
+    us = next((item for item in markets if item.get("name") == "美股"), None)
+    pill = f'近{impact.get("days", 30)}日，美股{us.get("bias", "") if us else ""}'
+    headline = esc(impact.get("headline") or "")
+    for short in sorted([item.get("short") for item in (impact.get("pressure_events") or [])
+                         + (impact.get("support_events") or []) if item.get("short")],
+                        key=len, reverse=True):
+        press = any(item.get("short") == short for item in impact.get("pressure_events") or [])
+        headline = headline.replace(esc(short), chip(short, press), 1)
+
+    board_cells = ""
+    for market in markets:
+        state = market.get("state")
+        note = _STATE_NOTE.get(state) or (
+            "含已观测收盘反应" if market.get("observed") else "机制推演，不外推点位")
+        split = ""
+        if state != "empty":
+            split = (f'（新发文 {market.get("score_window", 0):+.2f} / '
+                     f'存量 {market.get("score_carry", 0):+.2f}）')
+        board_cells += (
+            f'<div class="impact-cell {cell_cls(market.get("bias") or "")}">'
+            f'<div class="impact-name">{esc(market.get("name"))}，指数分 '
+            f'{market.get("score", 0):+.2f}{esc(split)}</div>'
+            f'<div class="impact-bias">{esc(market.get("bias"))}</div>'
+            f'<div class="impact-score">{esc(note)}</div>'
+            f'<div class="impact-split"><b>受益</b> {esc("、".join(market.get("support") or []) or "—")}'
+            f'<br><b>承压</b> {esc("、".join(market.get("pressure") or []) or "—")}</div></div>'
+        )
+
+    def release_li(item: dict, carry: bool = False) -> str:
+        press = item.get("stance") == "偏鹰"
+        label_cls = "point-label press" if press else "point-label"
+        if carry:
+            meta = (f'已过 {_span_text(item.get("days_ago", 0))}，影响期至 {item.get("active_until")}'
+                    f'（{_remaining_text(item.get("remaining_days", 0))}），{item.get("issuer")}')
+            title = item.get("short") or item.get("title")
+        else:
+            meta = f'{item.get("issuer")}｜{item.get("topic")}｜{item.get("horizon")}'
+            title = item.get("title")
+        evidence = f'<li>· {esc(item.get("stock_line") or "")}</li>'
+        if item.get("summary"):
+            evidence += f'<li>· {esc(item.get("summary"))}</li>'
+        badge = f'{item.get("stance") or ""} · {item.get("kind") or ""}'
+        head = item.get("topic") if carry else item.get("short")
+        return (f'<li><span class="point-no">{esc((item.get("date") or "")[5:])}</span>'
+                f'<span class="{label_cls}">{esc(head)}</span>'
+                f'<span>{chip(badge, press)}'
+                f'<span class="sector-stat">{esc(meta)}</span>'
+                f'<ul class="sector-evidence"><li>· {esc(title)}</li>{evidence}</ul></span></li>')
+
+    themes = impact.get("themes") or []
+    rows = ""
+    if themes:
+        rows += ('<li class="group-row"><span class="group-label">主线归并</span>'
+                 '<span class="group-note" data-meta="1">同主题合并，存量按半权，三市合成分</span></li>')
+        for item in themes[:4]:
+            press = item.get("direction") == "压制"
+            src = " / ".join(part for part in (
+                f'新 {item.get("window", 0)}' if item.get("window") else "",
+                f'存量 {item.get("carry", 0)}' if item.get("carry") else "") if part)
+            shorts = "、".join(item.get("shorts") or [])
+            detail = f'<ul class="sector-evidence"><li>· {esc(shorts)}</li></ul>' if shorts else ""
+            rows += (
+                '<li><span class="point-no">主</span>'
+                f'<span class="point-label{" press" if press else ""}">{esc(item.get("theme"))}</span>'
+                f'<span>{chip(item.get("direction") or "", press)}'
+                f'<span class="sector-stat">{esc(src)}，合成分 {item.get("net", 0):+.2f}</span>'
+                f'{detail}</span></li>'
+            )
+    rows += (f'<li class="group-row"><span class="group-label">窗口内政策发布</span>'
+            f'<span class="group-note" data-meta="1">{esc(impact.get("window_label") or "")}，'
+            f'新发文 {counts.get("in_window", 0)} 项，存量生效 {counts.get("carry", 0)} 项，新的在前</span></li>')
+    releases = impact.get("releases") or []
+    rows += "".join(release_li(item) for item in releases) or (
+        f'<li><span class="point-no">·</span><span>窗口内没有已核验发文，未核实日期的快讯不编造成政策发布。</span></li>')
+    carry = impact.get("carry_releases") or []
+    if carry:
+        rows += ('<li class="group-row"><span class="group-label">存量政策仍在生效</span>'
+                 f'<span class="group-note" data-meta="1">{len(carry)} 项，发文早于窗口、影响期未走完，按半权计入</span></li>')
+        rows += "".join(release_li(item, carry=True) for item in carry)
+
+    def sec(names: list, label: str, press: bool = False) -> str:
+        if not names:
+            return ""
+        cls = "point-label press" if press else "point-label"
+        return (f'<li><span class="point-no">{"－" if press else "＋"}</span>'
+                f'<span class="{cls}">{label}</span><span>{esc("、".join(names))}</span></li>')
+
+    lapsed = impact.get("lapsed_releases") or []
+    if lapsed:
+        text = "、".join(f'{item.get("date", "")[5:]} {item.get("short") or ""}' for item in lapsed[:4])
+        rows += ('<li class="group-row"><span class="group-label">窗口内已到期</span>'
+                 '<span class="group-note" data-meta="1">窗口前段生效、现已过期，不计分</span></li>'
+                 f'<li><span class="point-no">·</span><span>{esc(text)}</span></li>')
+
+    board = impact.get("sector_board") or {}
+    support = [row.get("name") for row in board.get("support") or []]
+    pressure = [row.get("name") for row in board.get("pressure") or []]
+    rows += ('<li class="group-row"><span class="group-label">板块传导</span>'
+             '<span class="group-note" data-meta="1">跨政策加总，含存量半权，不是指数点位</span></li>')
+    rows += sec(support, "受益") + sec(pressure, "承压", press=True)
+
+    return (
+        '<section class="pixel-section" id="policyDeepSection">'
+        '<div class="pixel-section-head"><div><h2>AI 政策深度</h2></div>'
+        f'<span class="ai-pill" id="policyDeepPill">{esc(pill)}</span></div>'
+        '<article class="insight-card" id="policyDeepCard">'
+        f'<p class="policy-headline" id="policyDeepHeadline">{headline}</p>'
+        f'<div class="impact-board" id="policyDeepBoard">{board_cells}</div>'
+        f'<ul class="insight-points sector-points" id="policyDeepList">{rows}</ul>'
+        '<div class="insight-foot" data-meta="1">'
+        f'<span id="policyDeepFoot" data-meta="1">{esc(impact.get("gap_note") or "")}'
+        '指数分可复算，仅供参考，不构成投资建议。</span></div>'
+        '</article></section>'
+    )
 
 
 if __name__ == "__main__":

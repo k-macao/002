@@ -446,6 +446,15 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
     return press ? `<mark class="press">${esc(text)}</mark>` : `<mark>${esc(text)}</mark>`;
   }
 
+  const STATE_NOTE={
+    empty:'窗口内无新发文，也无存量政策，不外推',
+    carry:'仅存量政策仍生效，按半权计入'
+  };
+  function span(days){
+    const n=Math.max(0, Number(days)||0);
+    return n<90 ? `${n} 天` : `约 ${Math.max(1, Math.round(n/30))} 个月`;
+  }
+
   function render(impact){
     if(!impact || !impact.headline) return;
     let headline=esc(impact.headline);
@@ -458,39 +467,71 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
       headline=headline.replace(safe, chip(short, press));
     });
     headlineEl.innerHTML=headline;
+
     boardEl.innerHTML=(impact.markets||[]).map(market=>{
       const cls=biasCls(market.bias);
-      const obs=market.observed ? '含已观测收盘反应' : '机制推演，不外推点位';
+      const note=STATE_NOTE[market.state] || (market.observed ? '含已观测收盘反应' : '机制推演，不外推点位');
+      const split=market.state!=='empty'
+        ? `（新发文 ${Number(market.score_window||0).toFixed(2)} / 存量 ${Number(market.score_carry||0).toFixed(2)}）`
+        : '';
       const support=(market.support||[]).join('、') || '—';
       const pressure=(market.pressure||[]).join('、') || '—';
       const cellCls=cls==='press' ? 'press' : (cls==='hot' ? '' : 'neutral');
       return `<div class="impact-cell ${cellCls}">
-        <div class="impact-name">${esc(market.name)} · 指数分 ${Number(market.score).toFixed(2)}</div>
+        <div class="impact-name">${esc(market.name)}，指数分 ${Number(market.score).toFixed(2)}${esc(split)}</div>
         <div class="impact-bias">${esc(market.bias)}</div>
-        <div class="impact-score">${esc(obs)}</div>
+        <div class="impact-score">${esc(note)}</div>
         <div class="impact-split"><b>受益</b> ${esc(support)}<br><b>承压</b> ${esc(pressure)}</div>
       </div>`;
     }).join('');
+
+    const themes=(impact.themes||[]).map(item=>{
+      const press=item.direction==='压制';
+      const src=[item.window?`新 ${item.window}`:'', item.carry?`存量 ${item.carry}`:''].filter(Boolean).join(' / ');
+      return `<li><span class="point-no">主</span><span class="point-label ${press?'press':''}">${esc(item.theme)}</span>`
+        + `<span>${chip(item.direction||'', press)}<span class="sector-stat">${esc(src)}，合成分 ${Number(item.net||0).toFixed(2)}</span>`
+        + ((item.shorts||[]).length ? `<ul class="sector-evidence"><li>· ${esc(item.shorts.join('、'))}</li></ul>` : '')
+        + `</span></li>`;
+    }).join('');
+
     const releases=(impact.releases||[]).map(item=>{
       const press=item.stance==='偏鹰';
       return `<li><span class="point-no">${esc((item.date||'').slice(5))}</span><span class="point-label ${press?'press':''}">${esc(item.topic||item.kind)}</span><span>${chip((item.stance||'')+' · '+(item.kind||''), press)}<span class="sector-stat">${esc(item.issuer)} · ${esc(item.horizon||'')}</span>
         <ul class="sector-evidence"><li>· ${esc(item.title)}</li><li>· ${esc(item.stock_line)}</li></ul></span></li>`;
     }).join('');
+
+    const carry=(impact.carry_releases||[]).map(item=>{
+      const press=item.stance==='偏鹰';
+      return `<li><span class="point-no">${esc((item.date||'').slice(5))}</span><span class="point-label ${press?'press':''}">${esc(item.topic||item.kind)}</span><span>${chip((item.stance||'')+' · '+(item.kind||''), press)}<span class="sector-stat">已过 ${span(item.days_ago)}，影响期至 ${esc(item.active_until||'')}（剩 ${span(item.remaining_days)}），${esc(item.issuer)}</span>
+        <ul class="sector-evidence"><li>· ${esc(item.short||item.title)}</li><li>· ${esc(item.stock_line)}</li></ul></span></li>`;
+    }).join('');
+
     const board=impact.sector_board||{};
     const support=(board.support||[]).map(row=>row.name).join('、') || '—';
     const pressure=(board.pressure||[]).map(row=>row.name).join('、') || '—';
     const counts=impact.counts||{};
-    listEl.innerHTML=`<li class="group-row"><span class="group-label">窗口内政策发布</span><span class="group-note">${esc(impact.window_label||'')} · ${counts.in_window||0} 项已核验 · 正式 ${counts['发布']||0} / 信号 ${counts['信号']||0} / 生效 ${counts['生效']||0}</span></li>`
-      + releases
-      + `<li class="group-row"><span class="group-label">板块传导</span><span class="group-note">跨政策加总 · 不是指数点位</span></li>`
+    listEl.innerHTML=(themes
+        ? `<li class="group-row"><span class="group-label">主线归并</span><span class="group-note" data-meta="1">同主题合并，存量按半权，三市合成分</span></li>` + themes
+        : '')
+      + `<li class="group-row"><span class="group-label">窗口内政策发布</span><span class="group-note">${esc(impact.window_label||'')}，新发文 ${counts.in_window||0} 项，存量生效 ${counts.carry||0} 项，新的在前</span></li>`
+      + (releases || `<li><span class="point-no">·</span><span>窗口内没有已核验发文，未核实日期的快讯不编造成政策发布。</span></li>`)
+      + (carry
+        ? `<li class="group-row"><span class="group-label">存量政策仍在生效</span><span class="group-note" data-meta="1">${(impact.carry_releases||[]).length} 项，发文早于窗口、影响期未走完，按半权计入</span></li>` + carry
+        : '')
+      + ((impact.lapsed_releases||[]).length
+        ? `<li class="group-row"><span class="group-label">窗口内已到期</span><span class="group-note" data-meta="1">窗口前段生效、现已过期，不计分</span></li>`
+          + `<li><span class="point-no">·</span><span>${esc((impact.lapsed_releases||[]).slice(0,4).map(item=>`${(item.date||'').slice(5)} ${item.short||''}`).join('、'))}</span></li>`
+        : '')
+      + `<li class="group-row"><span class="group-label">板块传导</span><span class="group-note" data-meta="1">跨政策加总，含存量半权，不是指数点位</span></li>`
       + `<li><span class="point-no">＋</span><span class="point-label">受益</span><span>${esc(support)}</span></li>`
       + `<li><span class="point-no">－</span><span class="point-label press">承压</span><span>${esc(pressure)}</span></li>`;
     if(footEl){
-      footEl.innerHTML=`${esc(impact.gap_note||'')} ${esc(impact.method_short||'')} 实时结果见 <code>/api/policy</code>`;
+      footEl.innerHTML=`${esc(impact.gap_note||'')} 指数分可复算，仅供参考，不构成投资建议。实时结果见 <code>/api/policy</code>`;
     }
     if(pillEl){
       const us=(impact.markets||[]).find(market=>market.name==='美股');
-      pillEl.textContent=`近${impact.days||30}日 · 美股${us?us.bias:''}`;
+      pillEl.textContent=`近${impact.days||30}日，新发文 ${counts.in_window||0}，存量 ${counts.carry||0}`
+        + (us ? `，美股${us.bias}` : '');
     }
   }
 
