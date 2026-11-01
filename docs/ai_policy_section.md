@@ -16,7 +16,7 @@
 | `policy_impact.py` · `page_section_html()` | 页面区块由同一份 `impact` 生成，静态快照与实时结果结构一致，不再手写维护 |
 | `policy_impact.py` · `fetch_official()` / `OFFICIAL_SOURCES` | 官方源头抓取与逐源核实：11 个机构入口，能抓的抓、只登记入口的如实标，抓不到写失败原因（见〇.六） |
 | `.github/workflows/policy-ledger.yml` | 每日 09:10（北京时间）抓官方源 → 写 `policy_ledger_cache.json` → 重生成静态页政策段并提交 |
-| `sources.py` · `analyze_policy()` | 政策引擎：8 个政策维度热度 + 多空方向 + 鹰鸽取向 + 支撑新闻；始终附带 `market_impact`。`deep=True`（默认）再叠加下面 ②-⑦ 的对照层 |
+| `sources.py` · `analyze_policy()` | 政策引擎：10 个政策维度热度 + 多空方向 + 鹰鸽取向 + 支撑新闻；始终附带 `market_impact`。`deep=True`（默认）再叠加下面 ②-⑦ 的对照层 |
 | `sources.py` · `_POLICY_KB` / `retrieve_policy_context()` / `policy_knowledge()` | ①政策法规知识库（RAG）：检索历史政策 → 与新信号对比分析 |
 | `sources.py` · `interpret_policy_modifiers()` | ③政策修饰词的经济学 + 法学双维解读（`_POLICY_MODIFIERS` 术语库） |
 | `sources.py` · `analyze_policy_sentiment()` | ④政策舆情情感打分（正向 / 中性 / 负向 + 官媒与市场的预期差） |
@@ -29,8 +29,16 @@
 | `test_sources.py` | `PolicyOfficialSourceTest` / `PolicySectionTest` / `PolicyMarketImpactTest` / `PolicyKnowledgeBaseTest` / `PolicyModifierTest` / `PolicySentimentTest` / `PolicyGraphTest` / `PolicyReasoningTest` / `PolicyModelTest` / `PolicyDeepWiringTest` |
 | `test_server.py` | `GET /api/policy` 响应结构 + 推送内容含政策两张卡片且位置在「AI 板块机会」之前 |
 
-口径：政策维度标签见 `sources._POLICY_BUCKETS`；鹰鸽词库见 `_HAWKISH` / `_DOVISH`（否定前缀
+口径：政策维度标签见 `sources._POLICY_BUCKETS`（共 10 维，前两维专项收国内官方口径：
+「会议与顶层部署」= 党委（扩大）会议 / 国务院常务会议 / 全会 / 发布会 / 五年规划；
+「官媒权威发布 · 央视新华社」= 央视、新闻联播、新华社、人民日报、中新社等）；
+鹰鸽词库见 `_HAWKISH` / `_DOVISH`（否定前缀
 `_POLICY_NEG_NEAR` / `_POLICY_NEG_FAR` 会把立场票翻转，如「不再那么鸽派」计为鹰派）。
+
+**官方口径固定可见**：热度前四常被地缘、美联储占满，会议与官媒两维会被挤出卡片。
+因此 `analyze_policy()` 额外返回 `official_voice = {tags, buckets, mentions, sources}`，
+推送卡片与页面在「政策主线」之后固定输出一行「官方口径」，即使这两维没有进入前四；
+容量收敛到最紧档位时，先砍热度前四、保留官方口径这一行。抓不到时该行为空，不补写。
 
 ---
 
@@ -157,10 +165,11 @@
 
 解读新政策时**先检索、再对比**，而不是让模型凭印象作答：
 
-- **库内容**（`_POLICY_KB`，18 条，覆盖全部 8 个政策维度）：央行货币政策执行报告、
+- **库内容**（`_POLICY_KB`，22 条，覆盖全部 10 个政策维度）：央行货币政策执行报告、
   9·24 一揽子增量政策、超长期特别国债与化债方案、大规模设备更新行动方案、「人工智能+」行动意见、
   新「国九条」与减持新规、中央金融工作会议、美联储降息与缩表、欧洲央行 / 日本央行决议、
-  地产金融政策、两用物项出口管制条例、民营经济促进法、BIS 对华管制规则等。
+  地产金融政策、两用物项出口管制条例、民营经济促进法、BIS 对华管制规则、
+  证监会党委（扩大）会议、国务院常务会议、央视金融街论坛报道、新华社央行隔夜逆回购通稿等。
   每条内部仍含：发文机关、时间、文件类型、关键表述、背景摘要、历史市场含义与受影响行业；
   这些字段供检索与模型判断使用，**AI 政策简报只展示日期、机关、文件类型、标题与匹配度**，
   不展示关键表述、背景摘要、历史市场含义或逐条对比文本。新增一条只需在列表里加一行，
@@ -227,7 +236,7 @@
 
 ## 五、政策传导图谱
 
-按政策维度预置传导链（`_POLICY_CHAINS`，覆盖全部 8 个维度），当日命中哪个维度就把对应的链拉出来，
+按政策维度预置传导链（`_POLICY_CHAINS`，覆盖全部 10 个维度），当日命中哪个维度就把对应的链拉出来，
 并带上该维度当日的政策净向：
 
 ```

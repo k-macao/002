@@ -234,6 +234,14 @@ SOURCE_META = [
      "pattern": r"csrc\.gov\.cn/csrc/c(?:100028|106311|100039)/c\w+/content\.shtml"},
     {"name": "香港特区政府 新闻公报", "section": "policy", "feed": "https://www.info.gov.hk/gia/rss/general_zh.xml"},
     # 境内官媒：中国新闻社（中新社）时政新闻官方 RSS，中央 / 部委政策发布与人事任免的官媒口径。
+    # 境内官媒头条：央视新闻 / 新华社是政策播发的第一落点，单列成源，
+    # 否则「央视发布的新闻」只能靠别的源转述，政策栏目里看不到。
+    {"name": "央视新闻 要闻", "section": "policy", "page": "https://news.cctv.com/",
+     "deepseek_search": _deepseek_site("cctv.com", "zh", days=2),
+     "pattern": r"(?:news|jingji|cctv)\.cctv\.com/\d{4}/\d{2}/\d{2}/ARTI\w+\.shtml"},
+    {"name": "新华社 时政财经", "section": "policy", "page": "http://www.news.cn/politics/",
+     "deepseek_search": _deepseek_site("news.cn", "zh", days=2),
+     "pattern": r"news\.cn/(?:politics|fortune|world)/(?:\d{8}/)?\w+/c\.html"},
     {"name": "中国新闻社 时政", "section": "policy", "feed": "https://www.chinanews.com.cn/rss/china.xml"},
     # 境外：angelinajh/regtech-policy-tracker 的做法 —— 直接订阅央行 / 监管机构官方 RSS（Atom 亦可）。
     {"name": "美联储 新闻稿",     "section": "policy", "feed": "https://www.federalreserve.gov/feeds/press_all.xml"},
@@ -583,6 +591,18 @@ _DEMO = {
         "香港特別行政區政府公布《香港特別行政區經濟和社會發展第一個五年規劃（2026—2030年）》",
         "立法會研究「生態＋旅遊」事宜小組委員會考察香港聯合國教科文組織世界地質公園",
         "衞生防護中心調查一宗猴痘確診個案",
+    ],
+    "央视新闻 要闻": [
+        "央视新闻：金融街论坛年会释放多项金融政策信号，央行、证监会主要负责人作主题演讲",
+        "央视新闻：美联储宣布维持利率不变，称通胀仍处高位",
+        "央视新闻：五部门发布 20 项举措加强消费基础设施建设",
+        "新闻联播：国务院常务会议部署进一步扩大内需、促进消费投资良性互动",
+    ],
+    "新华社 时政财经": [
+        "新华社：央行 11 月 2 日起每个工作日开展隔夜逆回购操作招标",
+        "新华社：证监会党委召开扩大会议，全力稳市场稳预期",
+        "新华社：美联储宣布维持利率不变，两票主张继续加息",
+        "新华社：二十届五中全会在北京举行",
     ],
     "中国新闻社 时政": [
         "中共中央办公厅 国务院办公厅印发《关于分类推进高校改革的意见》",
@@ -2293,6 +2313,21 @@ def _compose_flow(sectors_up: list, sectors_down: list, top_themes: list) -> str
 # 既大小写不敏感（demo 里的 "BESSENT … dovish" 同样计入「货币政策 · 美联储」），
 # 又不会让 FedEx 误命中 Fed。中文关键词按子串匹配。
 _POLICY_BUCKETS = [
+    # ① 会议与顶层部署：证监会党委会 / 国常会 / 全会精神 / 发布会，本身就是政策发布的一种形态。
+    # 没有这一维，「证监会开会」这类标题只会被拆成「资本市场监管」的一条提及，
+    # 既看不出「会议」这个来源形态，也没有把它们放进窗口计分。
+    ("会议与顶层部署", ["党委会议", "党委（扩大）会议", "党委(扩大)会议", "扩大会议", "党委会", "党组会议",
+                    "国务院常务会议", "国常会", "全体会议", "全会", "中全会", "政治局会议", "中央经济工作会议",
+                    "金融工作会议", "金融街论坛", "陆家嘴论坛", "国新办", "国务院新闻办", "新闻发布会",
+                    "新闻发言人", "答记者问", "传达学习", "贯彻落实", "专题会议", "部务会议",
+                    "监管工作会议", "经济工作会议", "十五五", "五年规划",
+                    "communique", "plenum", "state council meeting", "policy meeting", "press conference"]),
+    # ⑧ 官媒权威发布：央视 / 新华社 / 人民日报 / 中新社的报道本身就是官方口径，
+    # 单列一维，避免「央视发了什么」被埋进其它维度里。
+    ("官媒权威发布 · 央视新华社", ["央视", "央视新闻", "央视网", "CCTV", "新闻联播", "新华社", "新华网", "新华财经",
+                              "人民日报", "经济日报", "光明日报", "中国新闻社", "中新社", "中新网", "中国政府网",
+                              "政务联播", "新闻和报纸摘要", "焦点访谈", "经济半小时",
+                              "xinhua", "people's daily", "china daily"]),
     ("货币政策 · 美联储", ["美联储", "Fed", "FOMC", "Powell", "鲍威尔", "贝森特", "Bessent", "议息",
                           "利率决议", "点阵图", "美债收益率", "联邦基金利率", "鹰派", "鸽派",
                           "hawkish", "dovish", "Federal Reserve", "interest rate*", "rate cut*", "rate hike*",
@@ -2327,6 +2362,9 @@ _POLICY_BUCKETS = [
 ]
 
 # 政策取向词库：鹰派 = 收紧（对估值与利率敏感资产偏压制），鸽派 = 宽松 / 扶持（偏支撑）。
+# 官方口径固定展示的两维：会议 / 顶层部署 + 官媒权威发布（央视、新华社等）。
+_OFFICIAL_VOICE_BUCKETS = ("会议与顶层部署", "官媒权威发布 · 央视新华社")
+
 _HAWKISH = ["鹰派", "加息", "缩表", "收紧", "维持高利率", "强硬", "加征关税", "制裁", "增额关税",
             "限制", "禁止进口", "抛美债", "强势美元", "hawkish", "tighten*", "hike*", "sanction*", "tariff*",
             "restrictive", "crackdown", "curb*", "ban", "bans", "banned", "probe*", "penalt*", "export control*",
@@ -2581,6 +2619,15 @@ def analyze_policy(brief: dict, series: dict | None = None, deep: bool = True) -
         "opportunity_buckets": up_ranked[:3],
         "pressure_buckets": down_ranked[:2],
     }
+    # 官方口径：「会议与顶层部署」「官媒权威发布」这两维按热度常被挤到第 5 名开外，
+    # 但用户问的正是「证监会开会、央视发布算不算政策」——单独留一行固定展示。
+    data["official_voice"] = {
+        "tags": _OFFICIAL_VOICE_BUCKETS,
+        "buckets": [_bucket_entry(tag, 0, 3) for tag in _OFFICIAL_VOICE_BUCKETS
+                    if bucket_mentions.get(tag)],
+        "mentions": sum(bucket_mentions.get(tag, 0) for tag in _OFFICIAL_VOICE_BUCKETS),
+        "sources": len(set().union(*[bucket_sources.get(tag, set()) for tag in _OFFICIAL_VOICE_BUCKETS])),
+    }
     data["headline"] = _compose_policy_headline(data)
     # 近30日全球政策 → 股市影响不跑 LSTM，浅层接口也返回，供页面与 ?deep=0 使用。
     data["market_impact"] = policy_impact.analyze_policy_market_impact(brief)
@@ -2820,6 +2867,62 @@ _POLICY_KB = [
         "industries": ["半导体设备", "存储芯片", "国产算力", "光通信"],
         "site": "https://www.bis.doc.gov",
     },
+    # --- 会议与顶层部署：会议通稿也是一种政策发布形态（党委会 / 国常会 / 全会 / 论坛讲话）---
+    {
+        "id": "CSRC-PARTY-MEETING-20261030", "date": "2026-10-30", "issuer": "中国证监会", "doctype": "会议通稿",
+        "title": "证监会党委（扩大）会议：全力稳市场稳预期，完善全链条监管体系", "dimension": "会议与顶层部署",
+        "phrase": "稳市场稳预期",
+        "keywords": ["党委（扩大）会议", "党委会议", "稳市场稳预期", "投融资综合改革", "全链条监管",
+                     "资本市场韧性和信心", "十五五开局", "全会精神", "证监会"],
+        "summary": "10 月 30 日证监会党委书记、主席吴清主持召开党委（扩大）会议，传达学习党的二十届五中全会精神，"
+                   "部署贯彻落实举措，提出全力稳市场稳预期、深化投融资综合改革、完善全链条监管体系、"
+                   "持续提升资本市场韧性和信心，确保「十五五」开局之年任务完成。",
+        "market_effect": "「稳市场稳预期」+「全链条监管」是典型的「托底 + 严监管」组合：短期利好券商与宽基风险偏好，"
+                         "对题材炒作与违规减持是压制；此类会议通稿多为方向性表态，落地要看后续文件与工具。",
+        "industries": ["券商", "宽基 ETF", "高股息蓝筹", "中小市值题材"],
+        "site": "http://www.csrc.gov.cn",
+    },
+    {
+        "id": "STATE-COUNCIL-MEETING", "date": "2024-09-26", "issuer": "国务院", "doctype": "国务院常务会议",
+        "title": "国务院常务会议：部署一揽子增量政策，提振资本市场", "dimension": "会议与顶层部署",
+        "phrase": "一揽子增量政策",
+        "keywords": ["国务院常务会议", "国常会", "一揽子增量政策", "提振资本市场", "部署", "稳增长",
+                     "扩大内需", "研究部署"],
+        "summary": "国务院常务会议是部委政策落地前的最高行政例会：议题从稳增长、扩内需到资本市场，"
+                   "会后通常 1-4 周内由部委出台配套文件。",
+        "market_effect": "国常会本身是「预期信号」，真正的交易催化在配套文件（额度、税率、试点范围）；"
+                         "会议通稿偏原则、不给数字时，市场反应通常小于部委落地文件。",
+        "industries": ["基建", "消费", "地产链", "券商"],
+        "site": "https://www.gov.cn",
+    },
+    # --- 官媒权威发布：央视 / 新华社的报道口径单独成库，便于「官媒说了什么」的对照 ---
+    {
+        "id": "CCTV-FINANCIAL-STREET-2026", "date": "2026-10-19", "issuer": "央视新闻", "doctype": "官媒报道",
+        "title": "央视新闻：央行、证监会等部门在 2026 金融街论坛年会释放多项金融政策信号", "dimension": "官媒权威发布 · 央视新华社",
+        "phrase": "政策信号",
+        "keywords": ["央视新闻", "金融街论坛年会", "央行", "证监会", "金融监管总局", "外汇局",
+                     "主动ETF", "政策信号", "主题演讲"],
+        "summary": "央视新闻 10 月 19 日报道 2026 金融街论坛年会开幕式：央行、金融监管总局、证监会、外汇局主要负责人"
+                   "分别作主题演讲，围绕货币政策优化、金融风险监管、资本市场生态、行业转型升级披露工作安排；"
+                   "证监会主席吴清宣布同意首批 18 只主动 ETF 注册、推出北证 50ETF 等举措。",
+        "market_effect": "官媒集中报道的部委讲话会被市场当成「政策确认」，通常先给情绪与风险偏好，"
+                         "再看部委细则；同一内容若只有市场化媒体转述，定价强度明显弱于央视 / 新华社口径。",
+        "industries": ["券商", "宽基 ETF", "北交所", "非银金融"],
+        "site": "https://news.cctv.com",
+    },
+    {
+        "id": "XINHUA-PBC-ON-20261030", "date": "2026-10-30", "issuer": "新华社", "doctype": "官媒报道",
+        "title": "新华社：央行 11 月 2 日起每个工作日开展隔夜逆回购操作招标", "dimension": "官媒权威发布 · 央视新华社",
+        "phrase": "政策利率换锚",
+        "keywords": ["新华社", "新华网", "隔夜逆回购", "政策利率", "换锚", "公开市场操作", "DR001", "1.25%"],
+        "summary": "新华社 10 月 30 日播发央行公告：自 11 月 2 日起每个工作日开展隔夜逆回购操作招标，"
+                   "固定利率、数量招标，目前操作利率 1.25%；7 天期逆回购改为固定数量、利率招标、多重价位中标，"
+                   "主要在税期、月末等时点开展。",
+        "market_effect": "这是操作框架变化而非降息：短端资金面更平稳、政策信号传导链更短，"
+                         "对债券与银行间流动性偏友好；把它读成「降息 15bp」会高估宽松力度。",
+        "industries": ["银行", "利率债", "券商", "地产链"],
+        "site": "http://www.news.cn",
+    },
 ]
 
 # 检索口径：关键词命中 +2，政策维度匹配 +3（当日热度维度优先），关键表述命中 +1.5。
@@ -3018,6 +3121,7 @@ _POLICY_SENT_NEG = ["收紧", "从严", "查处", "处罚", "立案", "制裁", 
 _POLICY_SENT_AMPLIFY = ["坚决", "严厉", "全面", "罕见", "史上最大", "大幅", "重磅", "紧急", "首次"]
 # 官媒 / 官方口径识别：来源属于官方信息源，或标题带官方发布 / 解读特征。
 _OFFICIAL_VOICE_SOURCES = ["国务院", "发改委", "财政部", "商务部", "证监会", "特区政府", "中国新闻社", "中新社",
+                           "央视", "CCTV", "新华社", "新华网", "人民日报", "经济日报",
                            "美联储", "欧洲央行", "SEC", "联邦公报", "GOV.UK", "FCA"]
 _OFFICIAL_VOICE_MARKERS = ["解读", "发布会", "答记者问", "有关负责人", "新闻发言人", "社论", "评论员", "官方",
                            "回应", "印发", "发布会实录", "声明", "公告"]
@@ -3128,6 +3232,20 @@ def analyze_policy_sentiment(brief: dict) -> dict:
 # 政策主体 → 受影响行业 → 产业链上下游节点。图谱按政策维度组织：当日命中哪个维度，就把对应的
 # 传导链拉出来，并带上该维度当日的政策净向（净多 / 净空），形成「政策 → 行业 → 链条节点」的连接。
 _POLICY_CHAINS = {
+    "会议与顶层部署": {
+        "subject": "证监会党委会 / 国常会 / 中央全会", "industries": ["券商", "宽基 ETF", "银行", "北交所", "中字头"],
+        "upstream": ["会议通稿表述（稳市场稳预期 / 全链条监管）", "部委配套文件与工具储备", "中长期资金入市安排"],
+        "midstream": ["风险偏好与成交额", "券商投行与经纪业务预期", "违规减持与题材炒作约束"],
+        "downstream": ["宽基指数估值中枢", "风格切换（龙头 vs 题材）", "一级市场融资节奏"],
+        "nature": "结构性", "horizon": "1-6 个月",
+    },
+    "官媒权威发布 · 央视新华社": {
+        "subject": "央视新闻 / 新华社 / 人民日报", "industries": ["券商", "宽基 ETF", "非银金融", "北交所", "消费"],
+        "upstream": ["官媒播发口径（政策确认）", "部委发布会与讲话实录", "通稿里的数字与提法变化"],
+        "midstream": ["市场对政策的确认度", "预期差（官媒口径 vs 市场化解读）", "媒体扩散速度"],
+        "downstream": ["开盘情绪与量能", "主题板块脉冲", "政策细则落地后的二次定价"],
+        "nature": "周期性", "horizon": "数日-4 周",
+    },
     "货币政策 · 美联储": {
         "subject": "美联储 FOMC", "industries": ["全球风险资产", "贵金属", "出口链", "港股"],
         "upstream": ["联邦基金利率", "美债收益率", "美元指数", "全球美元流动性"],
@@ -5387,20 +5505,71 @@ META_TEXT_HIDDEN: list = []     # 本次推送删掉的片段（供自检与测�
             )
         policy_rows.append(f'<tr><td class="td-n">{rank:02d}</td>'
                            f'<td class="td-t">{head}{"".join(ev_rows)}</td></tr>')
+    # 官方口径单独一行：证监会党委会 / 国常会与央视、新华社的发布固定可见，
+    # 不靠热度排名（它们常被地缘、美联储挤出前四）。容量吃紧时只留这一行、先砍热度前四，
+    # 因为「会议 / 官媒算不算政策」正是官方口径要回答的问题。
+    voice = policy.get("official_voice") or {}
+
+    def _voice_html(compact: bool) -> str:
+        if not voice.get("buckets"):
+            return ""
+        voice_lines = []
+        for entry in voice["buckets"]:
+            stance_cls = "tag-d" if entry["stance"] == "偏鹰" else ("tag" if entry["stance"] == "偏鸽" else "tag-w")
+            if entry["net"] > 0:
+                net_text, net_cls = f"政策净多 {entry['net']}", "tag"
+            elif entry["net"] < 0:
+                net_text, net_cls = f"政策净空 {-entry['net']}", "tag-d"
+            else:
+                net_text, net_cls = "政策中性", "tag-w"
+            evs = "" if compact else "".join(
+                f'<div class="ev">· {_esc(ev.get("source") or "")}｜'
+                f'{_hl(_trunc(str(ev.get("title") or ""), 44))}</div>'
+                for ev in entry["evidence"][:1]
+            )
+            voice_lines.append(
+                f'<div><span class="tag">{_esc(entry["tag"])}</span> '
+                f'<span class="{stance_cls}">{entry["stance"]}</span> '
+                f'<span class="{net_cls}">{net_text}</span> '
+                f'<span class="sub">{entry["sources"]} 源命中 · {entry["mentions"]} 条提及 · '
+                f'鹰派 {entry["hawk"]} : 鸽派 {entry["dove"]}</span></div>{evs}'
+            )
+        return (
+            f'<tr><td class="td-n">官</td><td class="td-t">{_esc("官方口径")}'
+            f'<span class="sub">　会议部署与官媒发布，固定可见</span>{"".join(voice_lines)}</td></tr>'
+        )
+
+    policy_rows.append(_voice_html(compact=False))
+
     if not policy["buckets"]:
         policy_rows.append(
             f'<tr><td colspan="2" class="sub" style="padding:6px 0;">'
             f'当日样本中暂无政策面信号可统计，等待数据源刷新。</td></tr>'
         )
 
-    policy_card = (
-        f'<div class="card"><div class="hdr"><span class="tag">AI 政策分析</span>'
-        f'<span class="sub">{policy["mentions"]} 条政策提及 · {policy["sources_hit"]} 个数据源</span></div>'
-        f'<div class="txt">{_hl_policy(policy["headline"])}</div>'
-        f'<table class="tbl-sub">{"".join(policy_rows)}</table>'
-        f'<div class="ftr">政策取向由鹰派 / 鸽派词库判定（否定表述自动反转，如「不再那么鸽派」计为鹰派）· '
-        f'与「AI 每日总结」「AI 板块机会」共用同一批抓取标题</div></div>'
-    )
+    def _policy_card(tight: bool = False) -> str:
+        """``tight``：容量吃紧的收敛档位，只留表头 + 官方口径 + 热度第一，卡片本身不被整段砍掉。"""
+        if not tight:
+            rows = policy_rows
+        else:
+            # policy_rows 的固定顺序是：表头 → 热度前四 → 官方口径 →（可能）无信号兜底。
+            # 热度第一若本身就是官媒 / 会议维度，别在官方口径下面再重复一行。
+            rows = [policy_rows[0], _voice_html(compact=True)]
+            head = next((row for row in policy_rows[1:] if row not in rows), "")
+            if head:
+                rows.append(head)
+            elif len(policy_rows) > 1:
+                rows.append(policy_rows[-1])
+        return (
+            f'<div class="card"><div class="hdr"><span class="tag">AI 政策分析</span>'
+            f'<span class="sub">{policy["mentions"]} 条政策提及 · {policy["sources_hit"]} 个数据源</span></div>'
+            f'<div class="txt">{_hl_policy(policy["headline"])}</div>'
+            f'<table class="tbl-sub">{"".join(rows)}</table>'
+            f'<div class="ftr">政策取向由鹰派 / 鸽派词库判定（否定表述自动反转，如「不再那么鸽派」计为鹰派）· '
+            f'与「AI 每日总结」「AI 板块机会」共用同一批抓取标题</div></div>'
+        )
+
+    policy_card = _policy_card()
 
     # ── 「AI 情绪热力图」卡片：关键词级热度与情绪（面向股市投资）
     #    每个关键词为一个格子，含 9 维投资指标（热度/情绪/共振/分歧/爆发/资金倾向/评级/风险/置信度），
@@ -6047,7 +6216,7 @@ META_TEXT_HIDDEN: list = []     # 本次推送删掉的片段（供自检与测�
             + f'<div class="card"><div class="hdr"><span class="tag">AI 每日总结</span></div><div class="txt">{headline}</div>{points_html}</div>'
             + kanpan_card
             + heatmap_card
-            + policy_card
+            + _policy_card(tight=deep_level < 2)
             + policy_deep_cards
             + opportunities_card
             + _render_indie_radar(deep_level)

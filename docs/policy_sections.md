@@ -14,7 +14,7 @@
 | `finance` | 财经快讯 | 12 | rebang.vip 聚合通道（`channel` + `origin`） | — |
 | `trending` | 热搜热点 | 6 | 自定义收集器（`collector`） | ourongxing/newsnow |
 | `community` | 财经社区 · 中英文观点 | 20 | Reddit / 论坛 Atom·RSS；无稳定 RSS 的公开社区优先经 DeepSeek Search API（2026-10-17，需 `DEEPSEEK_API_KEY`）检索，回退 Google News RSS | 中文 8 源 + 英文 12 源，覆盖 18 种投资类型 |
-| `policy` | 政策发布 · 官方信息源 | 15 | 境内列表页 + 链接正则（`page` + `pattern`）+ 中国新闻社时政 RSS；境外官方 RSS / Atom（`feed`） | changwu/china-policy-sites · angelinajh/regtech-policy-tracker |
+| `policy` | 政策发布 · 官方信息源 | 17 | 境内列表页 + 链接正则（`page` + `pattern`）+ 中国新闻社时政 RSS；境外官方 RSS / Atom（`feed`） | changwu/china-policy-sites · angelinajh/regtech-policy-tracker |
 | `world` | 全球政经媒体 | 12 | 官方 RSS（`feed`） | edoardottt/news-list |
 | `civic` | 公民科技 · 政治透明度 | 4 | 开放 JSON API（`collector`）/ RSS（`feed`） | g0v · keepittechie/equitystack · GovTrack |
 
@@ -38,12 +38,13 @@
 
 可用 `GET /api/brief?section=community` 单独查看 20 源结果，或用 `GET /api/sections` 核对完整清单与数量。
 
-## 三、政策发布 · 官方信息源（15 源）
+## 三、政策发布 · 官方信息源（17 源）
 
 ### 境内（changwu/china-policy-sites 站点清单）
 
 这些政府站点**没有 RSS**，但「政策发布」栏目都是服务端渲染的列表页，条目链接有稳定特征，
 用 `LinkCollector` 收集全部 `<a href>` 后按正则筛选即可（相对链接用 `urljoin` 补全，短锚文本如「解读」「视频」跳过）。
+央视 / 新华社同样走 `page` + `pattern`：官媒首页栏目混排视频与图集，靠 `ARTI\w+\.shtml`、`/c.html` 收窄到文字稿，避免把节目单当政策发布。
 
 | 源 | 列表页 | 条目链接特征（`pattern`） |
 | --- | --- | --- |
@@ -54,12 +55,15 @@
 | 财政部 政策发布 | `https://www.mof.gov.cn/zhengwuxinxi/zhengcefabu/` | `mof.gov.cn/.+/t\d{8}_\d+.htm`（各司局子域） |
 | 商务部 政策发布 | `https://www.mofcom.gov.cn/zwgk/zcfb/index.html` | `mofcom.gov.cn/zwgk/zcfb/art/\d{4}/art_\w+.html` |
 | 证监会 新闻发布 | `https://www.csrc.gov.cn/csrc/xwfb/index.shtml` | `csrc.gov.cn/csrc/c(100028\|106311\|100039)/c\w+/content.shtml`（要闻 / 头条 / 政策解读；旧栏目 `c100028/common_list.shtml` 已停更） |
+| 央视新闻 要闻 | `https://news.cctv.com/` | `(news\|jingji\|cctv).cctv.com/\d{4}/\d{2}/\d{2}/ARTI\w+\.shtml`（新闻联播 / 金融街论坛等官媒口径） |
+| 新华社 时政财经 | `http://www.news.cn/politics/` | `news.cn/(politics\|fortune\|world)/\d{8}/\w+/c.html`（通稿原文，与央视互为口径校验） |
 | 香港特区政府 新闻公报 | `https://www.info.gov.hk/gia/rss/general_zh.xml` | 官方 RSS（繁体） |
 | 中国新闻社 时政 | `https://www.chinanews.com.cn/rss/china.xml` | 官方 RSS（时政新闻；中央 / 部委发文与人事任免的官媒口径，计入「官媒 / 官方口径」舆情） |
 
 > 注意：`https://www.gov.cn/zhengce/zuixin.htm`、`/lianbo/bumen/` 会 302 回首页，必须用上面带斜杠的目录地址。
 > 央行（pbc.gov.cn）有 JS 反爬壳，标准库直连拿不到列表，这里不接；央行发文会经「国务院 政务联播」转载进入简报。
 > 清单里的其他部委（市场监管总局、能源局、外汇局、网信办、工信部…）都可以照同样方式加一行 `page=` + `pattern=`。
+> 央视、新华社在沙箱里 TLS 会被重置（EOF），抓不到时按既有口径标「尚未抓取」，不编造条目；两源同时在 `policy_impact.OFFICIAL_SOURCES` 里登记，供「AI 政策深度」核对发文日。
 
 ### 境外（angelinajh/regtech-policy-tracker 的做法：直接订阅官方 RSS）
 
