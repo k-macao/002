@@ -495,10 +495,11 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
         + `<ul class="sector-evidence">${evidence}</ul></span></li>`;
     }).join('');
 
-    const themes=(impact.themes||[]).map(item=>{
+    const themeLabel=item=>item.market ? `${item.theme} · ${item.market}` : item.theme;
+    const themes=(impact.themes||[]).slice(0,6).map(item=>{
       const press=item.direction==='压制';
       const src=[item.window?`新 ${item.window}`:'', item.carry?`存量 ${item.carry}`:''].filter(Boolean).join(' / ');
-      return `<li><span class="point-no">主</span><span class="point-label ${press?'press':''}">${esc(item.theme)}</span>`
+      return `<li><span class="point-no">主</span><span class="point-label ${press?'press':''}">${esc(themeLabel(item))}</span>`
         + `<span>${chip(item.direction||'', press)}<span class="sector-stat">${esc(src)}，合成分 ${Number(item.net||0).toFixed(2)}</span>`
         + ((item.shorts||[]).length ? `<ul class="sector-evidence"><li>· ${esc(item.shorts.join('、'))}</li></ul>` : '')
         + `</span></li>`;
@@ -533,7 +534,7 @@ document.querySelectorAll('.pixel-switch input[data-toggle]').forEach(input=>{
     listEl.innerHTML=`<li><span class="point-no">源</span><span>${esc(official.display||'')}</span></li>`
       + ((official.failed||[]).length ? `<li><span class="point-no">断</span><span>${esc((official.failed||[]).join('、'))}</span></li>` : '')
       + (themes
-        ? `<li class="group-row"><span class="group-label">主线归并</span><span class="group-note" data-meta="1">同主题合并，存量半权，合成分可与三市对账</span></li>` + themes
+        ? `<li class="group-row"><span class="group-label">主线归并</span><span class="group-note" data-meta="1">同主题按市场拆开，存量半权，合成分可与三市对账</span></li>` + themes
         : '')
       + (marketsLogic
         ? `<li class="group-row"><span class="group-label">三市逻辑</span><span class="group-note" data-meta="1">哪条主线在托、哪条在拉，指数分可复算</span></li>` + marketsLogic

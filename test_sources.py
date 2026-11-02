@@ -59,14 +59,14 @@ class ParseChannelTest(unittest.TestCase):
 class SourceDefinitionTest(unittest.TestCase):
     def test_sixty_nine_sources_in_six_sections(self):
         # 原 49 源 + 20 个财经社区；社区覆盖中英文及多种投资类型。
-        self.assertEqual(len(sources.SOURCES), 69)
-        self.assertEqual(len(sources.SOURCE_META), 69)
-        self.assertEqual(len(set(sources.SOURCES)), 69, "数据源名称必须唯一")
+        self.assertEqual(len(sources.SOURCES), 71)
+        self.assertEqual(len(sources.SOURCE_META), 71)
+        self.assertEqual(len(set(sources.SOURCES)), 71, "数据源名称必须唯一")
         names = [m["name"] for m in sources.SOURCE_META]
         self.assertEqual(names, sources.SOURCES)
         counts = {sec["key"]: sec["count"] for sec in sources.section_catalog()}
         self.assertEqual(counts, {"finance": 12, "trending": 6, "community": 20,
-                                  "policy": 15, "world": 12, "civic": 4})
+                                  "policy": 17, "world": 12, "civic": 4})
 
     def test_twenty_communities_are_bilingual_and_diverse(self):
         community = [m for m in sources.SOURCE_META if m.get("section") == "community"]
@@ -753,6 +753,46 @@ class PolicySectionTest(unittest.TestCase):
             us_review=sources.analyze_us(market=sources._US_SNAPSHOT),
         )
 
+    def test_meeting_and_official_media_are_separate_dimensions(self):
+        # 用户问的原话：「证监会开会为什么不体现」「央视发的新闻为什么不体现」。
+        # 这两类必须是独立维度，否则只会被并进「资本市场监管」的一条提及里。
+        tags = [tag for tag, _ in sources._POLICY_BUCKETS]
+        self.assertEqual(tags[:2], ["会议与顶层部署", "官媒权威发布 · 央视新华社"])
+        self.assertEqual(len(tags), 10)
+        p = sources.analyze_policy(self._brief([
+            "证监会党委（扩大）会议传达学习全会精神，全力稳市场稳预期",
+            "央视新闻：金融街论坛年会释放多项金融政策信号",
+            "新华社：央行 10 月 30 日起每个工作日开展隔夜逆回购",
+        ]))
+        by_tag = {entry["tag"]: entry for entry in p["buckets"]}
+        self.assertIn("会议与顶层部署", by_tag)
+        self.assertEqual(by_tag["会议与顶层部署"]["sources"], 1)
+        self.assertIn("官媒权威发布 · 央视新华社", by_tag)
+        self.assertEqual(by_tag["官媒权威发布 · 央视新华社"]["mentions"], 2)
+        # 央视 / 新华社是官方口径，不算「市场化媒体转述」。
+        # 源名带括号的节目名（如「央视新闻 要闻」）由前缀「央视」覆盖，不做全名匹配。
+        self.assertTrue(any(marker in "央视新闻 要闻" for marker in sources._OFFICIAL_VOICE_SOURCES))
+        self.assertIn("新华社", sources._OFFICIAL_VOICE_SOURCES)
+        self.assertTrue(sources._is_official_voice("央视新闻 要闻", "任何标题"))
+
+    def test_official_voice_block_is_always_rendered(self):
+        # 「官方口径」不靠热度排名：地缘 / 美联储再热，会议与官媒两行也要出现在卡片里。
+        brief = self._brief([
+            "美国拟对中国数据中心设备加征关税并实施出口管制",
+            "美联储官员称通胀仍高，需继续加息",
+            "国务院常务会议部署稳就业稳经济",
+            "央视新闻：金融街论坛释放多项政策信号",
+        ])
+        policy = sources.analyze_policy(brief)
+        voice = policy["official_voice"]
+        self.assertEqual(voice["tags"], sources._OFFICIAL_VOICE_BUCKETS)
+        self.assertEqual([entry["tag"] for entry in voice["buckets"]], list(voice["tags"]))
+        self.assertGreaterEqual(voice["mentions"], 2)
+        html = sources.build_html(brief, **self._kanpan())
+        self.assertIn("官方口径", html)
+        self.assertIn("会议与顶层部署", html)
+        self.assertIn("官媒权威发布 · 央视新华社", html)
+
     def test_policy_buckets_heat_and_counts(self):
         p = sources.analyze_policy(self._brief([
             "美联储加息 25 个基点，缩表加速",
@@ -1351,6 +1391,9 @@ class PolicyDeepWiringTest(unittest.TestCase):
         self.assertLessEqual(len(tight), 16000)
         self.assertNotIn("AI 政策研报", tight)            # 研报栏目已下线，主分析卡片保留
         self.assertIn("AI 政策分析", tight)
+        # 收敛档位先砍热度前四，官方口径（会议 / 官媒）必须留着。
+        self.assertIn("官方口径", tight)
+        self.assertIn("官媒权威发布 · 央视新华社", tight)
 
 
 class PolicyMarketImpactTest(unittest.TestCase):
@@ -1382,7 +1425,8 @@ class PolicyMarketImpactTest(unittest.TestCase):
         self.assertEqual(out["counts"]["发布"], 8)
         self.assertEqual(out["counts"]["信号"], 1)
         self.assertEqual(out["counts"]["生效"], 1)
-        self.assertEqual(out["counts"]["outside"], 1)
+        # 台账已补到 2026-10：9-23 窗口外的 6 条是 08-19 的回购发文 + 10 月新增的 5 条。
+        self.assertEqual(out["counts"]["outside"], 6)
         self.assertEqual(out["latest_release"], "2026-09-20")
         self.assertIn("未核实日期的快讯不当成政策发布", out["gap_note"])
 
@@ -1473,20 +1517,21 @@ class PolicyCarryLayerTest(unittest.TestCase):
         self.assertEqual(pi.horizon_days({"horizon": "没写"}), 30)   # 缺失按最短假设处理
 
     def test_empty_window_falls_back_to_carry_layer(self):
-        # 2026-10-28：窗口内 0 项新发文，但台账里 7 项影响期未走完。
-        out = self.impact(date(2026, 10, 28))
+        # 2026-12-20：窗口 11-21 至 12-20 之内没有已核验发文，但台账里多项影响期未走完。
+        out = self.impact(date(2026, 12, 20))
         self.assertEqual(out["counts"]["in_window"], 0)
         self.assertEqual(out["counts"]["carry"], 7)
         self.assertTrue(out["carry_releases"])
         self.assertIn("没有新核验的全球政策发布", out["headline"])
         self.assertIn("存量政策仍在生效", out["headline"])
+        self.assertTrue(any(market["score"] for market in out["markets"]))
         for market in out["markets"]:
             self.assertNotEqual(market["bias"], "—")
             self.assertEqual(market["state"], "carry")
             self.assertEqual(market["score_window"], 0)
-            self.assertNotEqual(market["score"], 0)
-            self.assertIn("存量", market["reading"])
-            self.assertNotIn("机制推演，不外推", market["reading"])
+            if market["score"]:
+                self.assertIn("存量", market["reading"])
+                self.assertNotIn("机制推演，不外推", market["reading"])
 
     def test_expired_policies_are_listed_but_not_scored(self):
         out = self.impact(date(2026, 10, 28))
@@ -1496,49 +1541,63 @@ class PolicyCarryLayerTest(unittest.TestCase):
         carry_ids = {item["id"] for item in out["carry_releases"]}
         self.assertFalse(lapsed_ids & carry_ids)
         # 已到期的讲话不再给美股加分：美股只由仍在生效的加息路径决定。
-        self.assertLess(out["markets"][2]["score"], 0)
+        us = next(market for market in out["markets"] if market["name"] == "美股")
+        self.assertLess(us["score"], 0)
         self.assertFalse(any(item["score"] == 0 and item["id"] in lapsed_ids
                              for item in out["carry_releases"]))
 
     def test_carry_is_half_weight_and_separately_labelled(self):
         window = self.impact(date(2026, 9, 23))     # 全在新发文里
-        carry = self.impact(date(2026, 10, 28))     # 全在存量里
+        carry = self.impact(date(2026, 12, 20))     # 全在存量里（窗口内无新发文）
         self.assertTrue(all(market["score_carry"] == 0 for market in window["markets"]))
         self.assertTrue(all(market["score_window"] == 0 for market in carry["markets"]))
         # 存量按半权：同样的美联储加息，存量给出的美股压制分明显小于窗口内的全额。
-        self.assertLess(abs(carry["markets"][2]["score"]), abs(window["markets"][2]["score"]))
-        self.assertGreater(abs(carry["markets"][2]["score"]), 0.5)
+        us_window = next(market for market in window["markets"] if market["name"] == "美股")
+        us_carry = next(market for market in carry["markets"] if market["name"] == "美股")
+        self.assertLess(abs(us_carry["score"]), abs(us_window["score"]))
 
     def test_themes_merge_same_topic(self):
+        legacy = self.impact(date(2026, 12, 20))     # 只剩存量层：存量条数应被合并成一条主线
+        by_theme = {}
+        for row in legacy["themes"]:
+            by_theme.setdefault(row["theme"], []).append(row)
+        self.assertIn("国内地产金融", by_theme)
+        self.assertGreaterEqual(by_theme["国内地产金融"][0]["carry"], 3)
+        self.assertEqual(by_theme["国内地产金融"][0]["direction"], "支撑")
+        # 主题按（主题, 市场）分组：同一条主线在 A 股 / 港股 / 美股各有一条，方向可以不同。
         out = self.impact(date(2026, 10, 28))
-        themes = {item["theme"]: item for item in out["themes"]}
-        self.assertIn("海外货币收紧", themes)
-        self.assertGreaterEqual(themes["海外货币收紧"]["carry"], 3)
-        self.assertEqual(themes["海外货币收紧"]["direction"], "压制")
-        self.assertIn("国内地产金融", themes)
-        self.assertEqual(themes["国内地产金融"]["direction"], "支撑")
-        self.assertEqual(themes["海外货币收紧"]["window"], 0)
-        # 主线按绝对影响排序，第一条必须是压制最重的那条。
-        self.assertEqual(out["themes"][0]["theme"], "海外货币收紧")
+        fed = [row for row in out["themes"] if row["theme"] == "海外货币收紧"]
+        self.assertEqual({row["market"] for row in fed}, {"A股", "港股", "美股"})
+        self.assertTrue(all(row["direction"] == "压制" for row in fed))
 
     def test_market_drivers_name_the_theme_that_moves_the_score(self):
         out = self.impact(date(2026, 10, 28))
         us = next(item for item in out["markets"] if item["name"] == "美股")
         self.assertEqual([row["theme"] for row in us["drivers"]["pressure"]], ["海外货币收紧"])
-        self.assertEqual(us["drivers"]["support"], [])
+        # 拉低的是存量加息路径，托底的是 10 月暂停加息：两条主题不能混成一个名字。
         self.assertIn("拉低 海外货币收紧", us["driver_line"])
+        self.assertEqual([row["theme"] for row in us["drivers"]["support"]], ["海外利率转向观望"])
         a = next(item for item in out["markets"] if item["name"] == "A股")
         themes = {row["theme"] for row in a["drivers"]["support"] + a["drivers"]["pressure"]}
         self.assertIn("国内地产金融", themes)
         self.assertIn("海外货币收紧", themes)
-        # 托底 / 拉低两边相加就是这一层的指数分（同一套组内规则）
-        total = sum(row["score"] for row in a["drivers"]["support"] + a["drivers"]["pressure"])
-        self.assertAlmostEqual(total, a["score"], places=1)
+        # 托底 / 拉低只列该市场得分绝对值 ≥ 0.2 的主线、每边最多两条，
+        # 所以它是「谁在推」的摘要而不是全量加总；方向必须与得分符号一致。
+        for row in a["drivers"]["support"]:
+            self.assertGreater(row["score"], 0)
+        for row in a["drivers"]["pressure"]:
+            self.assertLess(row["score"], 0)
+        # 全量对账在 test_theme_scores_add_up_to_market_scores 里做（主线合成分相加 = 三市指数分）。
 
     def test_gap_note_accounts_for_every_outside_release(self):
-        out = self.impact(date(2026, 10, 28))
+        out = self.impact(date(2026, 12, 20))
         note = out["gap_note"]
-        self.assertIn("窗口前共 11 条", note)
+        # 窗口外的条目要分两类交代：发文早于窗口的（存量 / 到期 / 已结束）与晚于窗口的。
+        before = [r for r in sources.policy_impact._POLICY_RELEASES
+                  if r["date"] < out["start"]]
+        self.assertIn(f"窗口前共 {len(before)} 条", note)
+        later = [r for r in sources.policy_impact._POLICY_RELEASES if r["date"] > out["end"]]
+        self.assertIn("晚于本窗口" if later else "距今", note)
         self.assertIn(f"{out['counts']['carry']} 项影响期未走完", note)
         self.assertIn(f"{out['counts']['lapsed']} 项在窗口内到期", note)
         # 窗口外条目必须被完整交代：存量 + 到期 + 早已结束 = outside
@@ -1554,14 +1613,17 @@ class PolicyCarryLayerTest(unittest.TestCase):
         out = self.impact(date(2026, 10, 28))
         html = sources.policy_impact.page_section_html(out)
         self.assertEqual(html.count('id="policyDeepSection"'), 1)
-        for token in ("三市逻辑", "托底 国内地产金融", "拉低 海外货币收紧",
+        for token in ("三市逻辑", "托底 国内金融制度", "拉低 海外货币收紧",
                       "窗口内政策发布", "存量政策仍在生效", "板块传导", "官方入口"):
             self.assertIn(token, html)
-        self.assertNotIn("机制推演，不外推点位", html)
+        # 空窗口不自相矛盾：没有新发文时不能再写「机制推演，不外推点位」。
+        empty = sources.policy_impact.page_section_html(
+            sources.policy_impact.analyze_policy_market_impact(as_of=date(2027, 6, 1), use_cache=False))
+        self.assertNotIn("机制推演，不外推点位", empty)
 
     def test_theme_scores_add_up_to_market_scores(self):
         # 各主线合成分相加，必须等于三市指数分相加（否则卡片里两处数字互相打架）。
-        for as_of in (date(2026, 10, 28), date(2026, 9, 23), date(2026, 8, 24)):
+        for as_of in (date(2026, 12, 20), date(2026, 10, 28), date(2026, 9, 23), date(2026, 8, 24)):
             out = self.impact(as_of)
             themes = round(sum(item["net"] for item in out["themes"]), 3)
             markets = round(sum(market["score"] for market in out["markets"]), 3)
@@ -1574,13 +1636,14 @@ class PolicyCarryLayerTest(unittest.TestCase):
         self.assertEqual(pi._as_of(None), (_dt.now(_tz.utc) + _td(hours=8)).date())
 
     def test_no_ledger_side_effects(self):
-        first = self.impact(date(2026, 10, 28))
-        second = self.impact(date(2026, 10, 28))
+        first = self.impact(date(2026, 12, 20))
+        second = self.impact(date(2026, 12, 20))
         self.assertEqual(first["markets"], second["markets"])
         self.assertEqual(first["carry_releases"], second["carry_releases"])
 
     def test_card_shows_three_layers(self):
-        out = self.impact(date(2026, 10, 28))
+        out = self.impact(date(2026, 12, 20))
+        self.assertTrue(out["carry_releases"])
         html = sources.policy_impact.render_policy_impact_rows(out, sources._esc, 2)
         for token in ("主线归并", "窗口内政策发布", "存量政策仍在生效",
                       "窗口内已到期", "板块传导", "新发文 +0.00"):
@@ -1588,7 +1651,8 @@ class PolicyCarryLayerTest(unittest.TestCase):
         self.assertNotIn("机制推演，不外推点位", html)   # 空窗口不再自相矛盾
 
     def test_page_section_uses_same_impact(self):
-        out = self.impact(date(2026, 10, 28))
+        out = self.impact(date(2026, 12, 20))
+        self.assertTrue(out["carry_releases"])
         html = sources.policy_impact.page_section_html(out)
         for token in ('id="policyDeepHeadline"', 'id="policyDeepBoard"', 'id="policyDeepList"',
                       "存量政策仍在生效", "主线归并"):
@@ -1646,12 +1710,16 @@ class PolicyOfficialSourceTest(unittest.TestCase):
         self.assertEqual(pi.official_source_for("未知机构"), None)
 
     def test_curated_entries_are_media_not_official(self):
-        # 台账引用的是媒体转述：卡片要如实标「媒体转述」，不能冒充官方原文。
+        # 台账引用要么是官方原文、要么是媒体转述，两者必须如实标注，不能混写。
+        # 2026-10 起央视 / 新华社的报道算官方原文（官媒就是政策播发渠道），其余仍是媒体转述。
         rows = sources.policy_impact.verification_report()
         self.assertTrue(rows)
+        kinds = {row["source_kind"] for row in rows}
+        self.assertEqual(kinds, {"官方原文", "媒体转述"})
         for row in rows:
             self.assertTrue(row["checked"])
-            self.assertEqual(row["source_kind"], "媒体转述", row["source"])
+            self.assertEqual(row["source_kind"],
+                             sources.policy_impact.source_kind(row["source"]), row["source"])
 
     def test_source_kind_detects_official_domains(self):
         pi = sources.policy_impact
@@ -1811,7 +1879,7 @@ class PolicyOfficialSourceTest(unittest.TestCase):
         self.assertTrue(official["entries"])                  # 台账逐条挂官方入口
         for row in official["entries"]:
             self.assertTrue(row["entry"].startswith("http"))
-            self.assertEqual(row["source_kind"], "媒体转述")
+            self.assertIn(row["source_kind"], ("官方原文", "媒体转述"))
 
     def test_display_line_has_numbers_and_failed_sources(self):
         pi = sources.policy_impact

@@ -30,14 +30,16 @@ POLICY_MARKETS = ("A股", "港股", "美股")
 #   manual—— 只登记入口，靠人工 / Agent 核对（政府站常无稳定 RSS，反爬也重）。
 OFFICIAL_SOURCES = [
     {"key": "sc", "issuer": "国务院", "jurisdiction": "中国",
-     "domain": "www.gov.cn", "entry": "https://www.gov.cn/zhengce/", "mode": "manual",
-     "note": "中国政府网 · 政策文件库（国务院常务会议、国发 / 国办发文件）"},
+     "domain": "www.gov.cn", "entry": "https://www.gov.cn/zhengce/zuixin/", "mode": "html",
+     "pattern": r"gov\.cn/(?:zhengce|lianbo|yaowen|zhuanti)/.*content_\d+\.htm",
+     "note": "中国政府网 · 最新政策列表页（国务院常务会议、国发 / 国办发文件）"},
     {"key": "pbc", "issuer": "中国人民银行", "jurisdiction": "中国",
      "domain": "www.pbc.gov.cn", "entry": "http://www.pbc.gov.cn", "mode": "manual",
      "note": "人民银行 · 公告 / 货币政策 / 新闻发布"},
     {"key": "csrc", "issuer": "中国证监会", "jurisdiction": "中国",
-     "domain": "www.csrc.gov.cn", "entry": "http://www.csrc.gov.cn", "mode": "manual",
-     "note": "证监会 · 新闻发布 / 规章 / 征求意见"},
+     "domain": "www.csrc.gov.cn", "entry": "https://www.csrc.gov.cn/csrc/xwfb/index.shtml", "mode": "html",
+     "pattern": r"csrc\.gov\.cn/csrc/c(?:100028|106311|100039)/c\w+/content\.shtml",
+     "note": "证监会 · 新闻发布列表页（党委会议通稿 / 新闻发布会 / 规章与征求意见）"},
     {"key": "mohurd", "issuer": "住房城乡建设部", "jurisdiction": "中国",
      "domain": "www.mohurd.gov.cn", "entry": "https://www.mohurd.gov.cn", "mode": "manual",
      "note": "住建部 · 政策发布 / 规范性文件"},
@@ -45,11 +47,13 @@ OFFICIAL_SOURCES = [
      "domain": "www.nfra.gov.cn", "entry": "https://www.nfra.gov.cn", "mode": "manual",
      "note": "金融监管总局 · 规章 / 通知"},
     {"key": "mof", "issuer": "财政部", "jurisdiction": "中国",
-     "domain": "www.mof.gov.cn", "entry": "https://www.mof.gov.cn", "mode": "manual",
-     "note": "财政部 · 财政政策 / 国债 / 专项债"},
+     "domain": "www.mof.gov.cn", "entry": "https://www.mof.gov.cn/zhengwuxinxi/zhengcefabu/", "mode": "html",
+     "pattern": r"mof\.gov\.cn/.+/t\d{8}_\d+\.htm",
+     "note": "财政部 · 政策发布列表页（财政政策 / 国债 / 专项债）"},
     {"key": "ndrc", "issuer": "国家发展改革委", "jurisdiction": "中国",
-     "domain": "www.ndrc.gov.cn", "entry": "https://www.ndrc.gov.cn", "mode": "manual",
-     "note": "发改委 · 产业政策 / 项目审批"},
+     "domain": "www.ndrc.gov.cn", "entry": "https://www.ndrc.gov.cn/xxgk/zcfb/tz/", "mode": "html",
+     "pattern": r"ndrc\.gov\.cn/xxgk/zcfb/.+/t\d{8}_\d+\.html",
+     "note": "发改委 · 政策发布列表页（产业政策 / 项目审批）"},
     {"key": "fed", "issuer": "美联储 FOMC", "jurisdiction": "美国",
      "domain": "www.federalreserve.gov",
      "entry": "https://www.federalreserve.gov/newsevents/pressreleases.htm", "mode": "html",
@@ -63,6 +67,16 @@ OFFICIAL_SOURCES = [
     {"key": "ust", "issuer": "美国财政部", "jurisdiction": "美国",
      "domain": "home.treasury.gov", "entry": "https://home.treasury.gov/news/press-releases",
      "mode": "html", "note": "U.S. Treasury · Press Releases（国债 / 回购 / 制裁）"},
+    # 官媒也是政策发布渠道：央视新闻 / 新华社的播发本身就是「政策确认」，
+    # 央视、新华的报道链接因此判为「官方原文」，不再一律算媒体转述。
+    {"key": "cctv", "issuer": "央视新闻", "jurisdiction": "中国",
+     "domain": "cctv.com", "entry": "https://news.cctv.com/", "mode": "html",
+     "pattern": r"(?:news|jingji|cctv)\.cctv\.com/\d{4}/\d{2}/\d{2}/ARTI\w+\.shtml",
+     "note": "央视新闻 · 要闻列表页（政策播发 / 部委发布会 / 财经报道）"},
+    {"key": "xinhua", "issuer": "新华社", "jurisdiction": "中国",
+     "domain": "news.cn", "entry": "http://www.news.cn/politics/", "mode": "html",
+     "pattern": r"news\.cn/(?:politics|fortune|world)/(?:\d{8}/)?\w+/c\.html",
+     "note": "新华社 / 新华网 · 时政与财经通稿（政策原文播发、会议报道）"},
 ]
 
 # 台账 issuer 字符串 → 登记表 key（按顺序做包含匹配，先到先得）。
@@ -70,7 +84,8 @@ _ISSUER_KEYS = [
     ("金融监管总局", "nfra"), ("住房城乡建设部", "mohurd"), ("自然资源部", "mohurd"),
     ("中国人民银行", "pbc"), ("证监会", "csrc"), ("财政部", "mof"),
     ("美联储", "fed"), ("欧洲央行", "ecb"), ("日本央行", "boj"),
-    ("美国财政部", "ust"), ("国务院", "sc"),
+    ("美国财政部", "ust"), ("央视", "cctv"), ("新华社", "xinhua"),
+    ("国家发展改革委", "ndrc"), ("发改委", "ndrc"), ("国务院", "sc"),
 ]
 _BY_KEY = {item["key"]: item for item in OFFICIAL_SOURCES}
 _OFFICIAL_HOSTS = tuple(item["domain"] for item in OFFICIAL_SOURCES)
@@ -366,6 +381,120 @@ _POLICY_RELEASES = [
         source="https://finance.sina.com.cn/tech/roll/2026-09-21/doc-inispync2095364.shtml",
         source_note="全国银行间同业拆借中心，2026-09-20",
     ),
+    # ---------------- 2026-10 新入库：此前台账只到 09-20，卡片因此一直说「没有新发文」 ----------------
+    # 这一批全部有公开报道可核对发文日；媒体转述与官方原文分开标，不混写。
+    _release(
+        id="CSRC-PARTY-20261030", date="2026-10-30", issuer="中国证监会", jurisdiction="中国",
+        doctype="党委（扩大）会议", kind="发布", topic="会议与顶层部署", dimension="会议与顶层部署",
+        theme="国内监管部署", stance="偏鸽", magnitude="高", horizon="1-6 个月",
+        title="证监会党委（扩大）会议：全力稳市场稳预期，完善全链条监管体系",
+        short="证监会党委会：稳市场稳预期",
+        summary="10 月 30 日证监会党委书记、主席吴清主持召开党委（扩大）会议，传达学习党的二十届五中全会精神并部署落实："
+                "全力稳市场稳预期，深化投融资综合改革，完善全链条监管体系，持续提升资本市场韧性和信心，"
+                "确保「十五五」开局之年资本市场各项任务圆满完成。",
+        markets={
+            "美股": _mx(0, 0.2, [], "不直接定价美股。"),
+            "A股": _mx(1, 0.75, [("券商", 1), ("宽基 ETF", 1), ("中字头", 1), ("中小市值题材", -1)],
+                      "「稳市场稳预期」托住风险偏好、「全链条监管」压制题材炒作，是托底与严监管同时给的组合；"
+                      "会议通稿偏方向，落地看后续文件与工具，不外推指数点位。"),
+            "港股": _mx(1, 0.5, [("中资券商", 1), ("互联互通", 1)],
+                       "投融资综合改革与中长期资金入市对港股中资券商、互联互通是中期变量，不单列恒指点位。"),
+        },
+        cross_asset="同日披露：证监会系统将开展全覆盖宣讲解读；会议未给具体额度或工具，属方向性部署。",
+        keywords=["党委（扩大）会议", "稳市场稳预期", "全链条监管", "投融资综合改革", "证监会"],
+        source="https://finance.sina.com.cn/tech/roll/2026-10-30/doc-iniwziit4573266.shtml",
+        source_note="证监会官网消息，2026-10-30（新浪财经 / 上海证券报 10-31 转述）",
+    ),
+    _release(
+        id="CCTV-FINANCIAL-STREET-20261019", date="2026-10-19", issuer="央视新闻", jurisdiction="中国",
+        doctype="官媒报道", kind="发布", topic="官媒权威发布", dimension="官媒权威发布 · 央视新华社",
+        theme="国内金融制度", stance="偏鸽", magnitude="高", horizon="1-4 周",
+        title="央视新闻：2026 金融街论坛年会开幕，央行、金融监管总局、证监会、外汇局释放多项政策信号",
+        short="央视：金融街论坛政策信号",
+        summary="央视新闻 10 月 19 日报道：2026 金融街论坛年会开幕式上，央行行长潘功胜宣布将会同金融监管总局、"
+                "证监会设立应对非银机构大额赎回的流动性支持工具；证监会主席吴清宣布当天同意首批 18 只主动 ETF 注册，"
+                "并将推出北证 50ETF、北交所新股市值配售、健全长周期考核机制等举措；外汇局推出跨境投融资便利化一揽子政策。",
+        markets={
+            "美股": _mx(0, 0.2, [], "不直接定价美股。"),
+            "A股": _mx(1, 0.65, [("券商", 1), ("宽基 ETF", 1), ("北交所", 1)],
+                      "官媒集中播发等于政策确认：主动 ETF 与北证 50ETF 是增量资金入口，券商与宽基最直接；"
+                      "债券流动性支持工具对非银是尾部风险对冲。不外推点位。"),
+            "港股": _mx(1, 0.4, [("中资券商", 1), ("互联互通", 1)],
+                       "同一场论坛提到加快人民币股票交易柜台与 REITs 纳入沪深港通，对港股是中期利好，不单列点位。"),
+        },
+        cross_asset="同场政策含外汇局资本项目便利化一揽子措施；央视口径的定价强度高于市场化媒体转述。",
+        keywords=["金融街论坛", "主动ETF", "金融街论坛年会", "18只主动ETF", "北证50"],
+        source="https://jingji.cctv.com/2026/10/19/ARTIJ9PSkYt5WmMZ93olxuBJ261019.shtml",
+        source_note="央视新闻，2026-10-19 22:27（央视网原文）",
+    ),
+    _release(
+        id="XINHUA-PBC-ON-20261030", date="2026-10-30", issuer="中国人民银行", jurisdiction="中国",
+        doctype="公开市场公告", kind="发布", topic="货币政策框架", dimension="央行 · 流动性",
+        theme="国内流动性框架调整", stance="偏鸽", magnitude="高", horizon="3-12 个月",
+        title="新华社：11 月 2 日起每个工作日开展隔夜逆回购招标，操作利率 1.25%（政策利率换锚）",
+        short="央行隔夜逆回购换锚 1.25%",
+        summary="新华社 10 月 30 日播发央行公告：自 11 月 2 日起每个工作日开展隔夜逆回购操作招标，固定利率、数量招标，"
+                "目前操作利率 1.25%；7 天期逆回购改为固定数量、利率招标、多重价位中标，主要在税期、月末等时点开展；"
+                "临时正 / 逆回购、境外央行类机构回购工具改为在隔夜利率基础上加减点，幅度不变。",
+        markets={
+            "美股": _mx(0, 0.2, [], "不直接定价美股。"),
+            "A股": _mx(1, 0.45, [("银行", 1), ("券商", 1), ("地产链", 1)],
+                      "这是操作框架换锚、不是降息：短端资金面更平稳、传导链更短，对利率敏感的银行与地产链偏友好；"
+                      "把 1.25% 读成「降息 15bp」会高估宽松力度。不外推点位。"),
+            "港股": _mx(1, 0.35, [("内房股", 1), ("利率敏感", 1)],
+                       "资金面预期平稳对港股是温和支撑，幅度小于直接降息。不外推恒指点位。"),
+        },
+        cross_asset="10 月 DR001 均值 1.2805%，较 9 月下行约 10bp；机构普遍预计 12 月美联储再加息 25bp。",
+        keywords=["隔夜逆回购", "政策利率", "换锚", "1.25%", "DR001"],
+        source="https://www.news.cn/fortune/20261030/15e4b60a62d6408e867fa278e32f1d5d/c.html",
+        source_note="新华社，2026-10-30 20:22（新华网原文）",
+    ),
+    _release(
+        id="NDRC-CONSUMPTION-20261030", date="2026-10-30", issuer="国家发展改革委", jurisdiction="中国",
+        doctype="指导意见", kind="发布", topic="消费与内需", dimension="财政 · 关税与债务",
+        theme="国内消费与内需", stance="偏鸽", magnitude="中", horizon="6-24 个月",
+        title="五部门《关于加强消费基础设施建设促进消费投资良性互动的指导意见》，20 项举措",
+        short="五部门消费基建 20 条",
+        summary="10 月 30 日国家发展改革委等五部门发布指导意见，从完善城乡商业设施、提升服务消费设施、优化出行消费设施、"
+                "健全流通设施网络、推进新型消费设施建设、保障措施六方面提出 20 项举措，涵盖文旅、体育休闲、养老托育、"
+                "家政、健康服务消费设施与充电桩、停车设施、智慧商圈；资金上要求统筹各类资金渠道、发挥新型政策性金融工具"
+                "与 REITs 作用、引导金融机构信贷支持。",
+        markets={
+            "美股": _mx(0, 0.2, [], "不直接定价美股。"),
+            "A股": _mx(1, 0.5, [("消费", 1), ("商贸零售", 1), ("充电桩", 1), ("文旅", 1)],
+                      "基建化的消费支持：先给订单（充电桩 / 停车 / 智慧商圈设备），再给场景（文旅、养老托育）；"
+                      "20 条多为方向与清单，额度与细则决定弹性。不外推点位。"),
+            "港股": _mx(1, 0.3, [("消费", 1), ("内需", 1)],
+                       "对港股消费与内需是中期变量，短期弹性弱于 A 股对应板块。不单列点位。"),
+        },
+        cross_asset="同日发改委还就政府采购本国产品标准公开征求意见，方向一致：以国内需求与国产替代承接外需波动。",
+        keywords=["消费基础设施", "促进消费投资良性互动", "五部门", "20项", "充电设施"],
+        source="http://news.10jqka.com.cn/20261030/c681315410.shtml",
+        source_note="国家发展改革委等五部门，2026-10-30（同花顺 / 21 世纪经济报道转述）",
+    ),
+    _release(
+        id="FED-HOLD-20261028", date="2026-10-28", issuer="美联储 FOMC", jurisdiction="美国",
+        doctype="议息决定", kind="发布", topic="货币政策", dimension="货币政策 · 美联储",
+        theme="海外利率转向观望", stance="偏鹰", magnitude="高", horizon="2-6 周",
+        title="联邦基金利率维持 3.75%-4.00% 不变，10 比 2 两票主张继续加息",
+        short="美联储10月按兵不动",
+        summary="10 月 28 日 FOMC 以 10 比 2 维持利率区间 3.75%-4.00%，理事库克与克利夫兰联储行长哈马克主张再加息 25bp；"
+                "声明称通胀仍处高位，累积信息有助确定合适政策。会后市场对 12 月加息概率升至约 85%，"
+                "多家投行预计 12 月加息 25bp。沃什另宣布 2027-2028 年减少议息频次。",
+        markets={
+            "美股": _mx(1, 0.6, [("利率敏感成长", 1), ("银行", 1)],
+                       "已观测：决议当日三大指数集体收涨、连续第三个交易日上涨。暂停加息是「利空未兑现」，"
+                       "不是转鸽——12 月加息概率仍在 85% 附近。"),
+            "A股": _mx(1, 0.4, [("长久期成长", 1)],
+                      "外部贴现率暂不再上台阶，给成长估值一个窗口；但 12 月加息预期仍在，反弹不外推高度。"),
+            "港股": _mx(1, 0.5, [("恒生科技", 1)],
+                       "港元利率跟随美元，暂停加息直接缓和港股贴现率压力；后续仍看 12 月会议。"),
+        },
+        cross_asset="已观测：美股当日三大指数收涨；10 年期美债收益率回落。国泰海通等机构提示 12 月加息概率仍高。",
+        keywords=["维持利率不变", "3.75%-4.00%", "FOMC", "10比2", "12月加息"],
+        source="https://www3.xinhuanet.com/world/20261029/b4b529328e514a7b823a3be6f6fa1178/c.html",
+        source_note="FOMC 2026-10-28 决议；新华社 2026-10-29 播发（新华网原文）",
+    ),
 ]
 
 
@@ -636,6 +765,13 @@ def parse_links(html: str, source: dict) -> list[dict]:
     """
     text = str(html or "")
     out = []
+    # 有 pattern 的源（政府 / 央视列表页）额外按条目链接特征收窄，避免把栏目页、专题页当发文。
+    pattern = None
+    if source.get("pattern"):
+        try:
+            pattern = re.compile(str(source["pattern"]))
+        except re.error:
+            pattern = None
     anchors = list(_ANCHOR.finditer(text))
     dates = _date_candidates(text)
     paths = _element_paths(text, [match.start() for match in anchors] + [row[0] for row in dates])
@@ -643,6 +779,8 @@ def parse_links(html: str, source: dict) -> list[dict]:
         href, inner = match.group(1), _clean(match.group(2))
         url = href if href.startswith("http") else ""
         if not url or not is_official_url(url):
+            continue
+        if pattern is not None and not pattern.search(url):
             continue
         if len(inner) < 6 or len(inner) > 140:
             continue
@@ -665,7 +803,18 @@ def parse_links(html: str, source: dict) -> list[dict]:
 
 
 _AUTO_RULES = [
-    (("fomc", "federal funds", "联邦基金", "加息", "降息", "target range"), "货币政策 · 美联储", "海外货币收紧"),
+    # 会议 / 发布会通稿优先判定：证监会党委会、国常会、全会精神这类标题同时含「证监会」「部署」，
+    # 不先归到会议维度就会被拆成资本市场监管的一条提及，看不出「会议也是一种政策发布形态」。
+    # 官媒口径排在最前：央视 / 新华社自己发的稿，先记「谁播发的」，再谈内容维度。
+    (("央视", "cctv", "新闻联播", "新华社", "新华网", "新华财经", "人民日报", "中新社", "中国新闻社", "xinhua"),
+     "官媒权威发布 · 央视新华社", "官方口径确认"),
+    (("党委会议", "党委（扩大）会议", "党委(扩大)会议", "党委会", "党组会议", "国务院常务会议", "国常会",
+      "全体会议", "中全会", "政治局会议", "中央经济工作会议", "金融工作会议", "国新办", "新闻发布会",
+      "金融街论坛", "陆家嘴论坛", "座谈会", "研究部署", "传达学习", "press conference", "plenum"),
+     "会议与顶层部署", "国内监管部署"),
+    (("fomc", "federal funds", "联邦基金", "加息", "降息", "降准", "维持利率", "利率不变", "按兵不动",
+      "target range", "hold steady", "held rates"), "货币政策 · 美联储", "海外货币收紧"),
+    (("消费基础设施", "扩大内需", "提振消费", "促消费", "消费品以旧换新", "内需"), "财政 · 关税与债务", "国内消费与内需"),
     (("ecb", "欧洲央行", "deposit facility", "拉加德", "lagarde"), "货币政策 · 美联储", "海外货币收紧"),
     (("boj", "日本央行", "植田", "ueda", "policy rate"), "货币政策 · 美联储", "海外货币收紧"),
     (("lpr", "mlf", "逆回购", "降准", "降息", "再贷款", "流动性", "公开市场"), "央行 · 流动性", "国内利率按兵不动"),
@@ -733,6 +882,13 @@ def fetch_official(as_of=None, lookback_days: int = OFFICIAL_LOOKBACK_DAYS,
         head = str(text)[:600].lower()
         is_feed = source.get("mode") == "rss" or "<rss" in head or "<feed" in head
         parsed = parse_rss(text, source) if is_feed else parse_links(text, source)
+        # 列表页渲染成前端壳（JS 站点）时会解析出 0 条：再按该源的条目正则抓一次 RSS，
+        # 有 feed 的站点用 feed，没 feed 的站点就如实标 empty，不硬编条目。
+        if not parsed and not is_feed and source.get("feed"):
+            try:
+                parsed = parse_rss(_get_text(source["feed"]), dict(source, key=source["key"]))
+            except Exception:
+                parsed = []
         fresh, seen = [], set()
         for item in parsed:
             stamp = datetime.strptime(item["date"], "%Y-%m-%d").date()
@@ -910,6 +1066,13 @@ def _stock_line(release: dict) -> str:
     return "；".join(bits)
 
 
+def _theme_label(item: dict) -> str:
+    """主题名带上市：同一条主线在 A 股 / 港股 / 美股各有一份合成分，只写主题会看不出是三行。"""
+    theme = item.get("theme") or ""
+    market = item.get("market") or ""
+    return f"{theme} · {market}" if market else theme
+
+
 def _driver_line(drivers: dict | None) -> str:
     """「托底 …；拉低 …」一行纯文本，供推送 / 页面 / 前端共用，避免三处各写一套。"""
     ups = [f"{item['theme']} {item['score']:+.2f}" for item in (drivers or {}).get("support") or []]
@@ -990,6 +1153,7 @@ def _headline(payload: dict) -> str:
 # 官方信息源名称特征：当日抓取里来自这些源的标题，才算「官方动态」（待核验发文）。
 _OFFICIAL_NAME_HINTS = ("国务院", "发改委", "发展改革委", "财政部", "商务部", "证监会", "人民银行", "央行",
                         "住建部", "住房城乡建设部", "统计局", "金融监管总局", "外汇局", "政府网",
+                        "央视", "新华社", "新华网", "人民日报", "中国新闻社", "中新社",
                         "美联储", "federal reserve", "fomc", "欧洲央行", "ecb", "日本央行", "boj",
                         "treasury", "财政部", "sec", "联邦公报", "federal register", "g0v",
                         "govtrack", "equitystack", "政策发布", "政策解读")
@@ -1327,37 +1491,43 @@ def analyze_policy_market_impact(brief: dict | None = None, as_of=None,
         })
 
     # 主线归并：同一主题的窗口内发文 + 存量合成一条主线，读者先看「哪几条线在推」而不是 10 条流水。
-    # 合成分 = 三市各自按组内规则算出的得分之和，所以「主线合成分相加 = 三市指数分相加」，可对账。
-    theme_meta: dict[str, dict] = {}
+    # 分组键 = （主题, 市场）：同一条主线在不同市场的方向可以不同（「国内监管部署」托 A 股、不碰美股），
+    # 只按主题合并会把三市方向搅在一起；带上市场之后，每条主线「托哪几市、压哪几市」一眼可见。
+    # 合成分仍按组内规则计算，所以「各主线合成分相加 = 三市指数分相加」这条对账关系不变。
+    # 主题名本身要能读出方向：转鸽 / 转观望的政策不能挂在「海外货币收紧」名下（会把正贡献写成压制）。
+    theme_meta: dict[tuple, dict] = {}
     for release, layer in [(item, "window") for item in in_window] + [(item, "carry") for item in carry]:
-        row = theme_meta.setdefault(release["theme"], {"theme": release["theme"], "window": 0,
-                                                       "carry": 0, "shorts": [], "markets": []})
-        row[layer] += 1
-        if release["short"] not in row["shorts"]:
-            row["shorts"].append(release["short"])
         for market in POLICY_MARKETS:
-            if _contrib(release, market) and market not in row["markets"]:
-                row["markets"].append(market)
-    theme_net: dict[str, float] = {}
-    for market in POLICY_MARKETS:
-        win_scores = _theme_scores(in_window, market)
-        carry_scores = _theme_scores(carry, market, _CARRY_DECAY)
-        for theme in set(win_scores) | set(carry_scores):
-            theme_net[theme] = (theme_net.get(theme, 0.0)
-                                + win_scores.get(theme, 0.0) + carry_scores.get(theme, 0.0))
+            if not _contrib(release, market):
+                continue
+            row = theme_meta.setdefault((release["theme"], market), {
+                "theme": release["theme"], "market": market,
+                "window": 0, "carry": 0, "shorts": []})
+            row[layer] += 1
+            if release["short"] not in row["shorts"]:
+                row["shorts"].append(release["short"])
+
+    win_scores = {market: _theme_scores(in_window, market) for market in POLICY_MARKETS}
+    carry_scores = {market: _theme_scores(carry, market, _CARRY_DECAY) for market in POLICY_MARKETS}
     themes = []
-    for theme, row in theme_meta.items():
-        net = theme_net.get(theme, 0.0)
+    for (theme, market), row in theme_meta.items():
+        net = win_scores[market].get(theme, 0.0) + carry_scores[market].get(theme, 0.0)
         themes.append({
             "theme": theme,
+            "market": market,
             "window": row["window"],
             "carry": row["carry"],
             "net": round(net, 3),
             "direction": "压制" if net <= -0.2 else ("支撑" if net >= 0.2 else "对冲"),
             "shorts": row["shorts"][:2],
-            "markets": row["markets"],
+            "markets": [market],
         })
-    themes.sort(key=lambda item: abs(item["net"]), reverse=True)
+    # 读者先看主题：同一主题的三市条目排在一起，组内按 A股 → 港股 → 美股；组间按该主题最大|合成分|排序。
+    _market_order = {name: index for index, name in enumerate(POLICY_MARKETS)}
+    theme_rank = {}
+    for row in themes:
+        theme_rank[row["theme"]] = max(theme_rank.get(row["theme"], 0.0), abs(row["net"]))
+    themes.sort(key=lambda item: (-theme_rank[item["theme"]], item["theme"], _market_order[item["market"]]))
 
     counts = {
         "in_window": len(releases),
@@ -1547,13 +1717,13 @@ def render_policy_impact_rows(impact: dict | None, esc, level: int = 2) -> str:
                 f"新 {item.get('window', 0)}" if item.get("window") else "",
                 f"存量 {item.get('carry', 0)}" if item.get("carry") else "") if part)
             lines.append(
-                f'<div class="ev">{tag(item.get("direction") or "", cls)} {esc(item.get("theme") or "")}'
+                f'<div class="ev">{tag(item.get("direction") or "", cls)} {esc(_theme_label(item))}'
                 f'　<span class="sub">{esc(src)}，合成分 {item.get("net", 0):+.2f}</span>'
                 + (f'　{esc("、".join(item.get("shorts") or []))}' if level > 1 and item.get("shorts") else "")
                 + "</div>"
             )
         rows.append(f'<tr><td class="td-n">主</td><td class="td-t"><div>{tag("主线归并", "tag-w")}'
-                    f'　<span class="sub">同主题合并，存量半权，合成分可与三市对账</span></div>{"".join(lines)}</td></tr>')
+                    f'　<span class="sub">同主题按市场拆开，存量半权，合成分可与三市对账</span></div>{"".join(lines)}</td></tr>')
 
     official = impact.get("official") or {}
     if level > 0:
@@ -1767,8 +1937,8 @@ def page_section_html(impact: dict | None, as_of: str = "") -> str:
     themes = impact.get("themes") or []
     if themes:
         rows += ('<li class="group-row"><span class="group-label">主线归并</span>'
-                 '<span class="group-note" data-meta="1">同主题合并，存量半权，合成分可与三市对账</span></li>')
-        for item in themes[:4]:
+                 '<span class="group-note" data-meta="1">同主题按市场拆开，存量半权，合成分可与三市对账</span></li>')
+        for item in themes[:6]:
             press = item.get("direction") == "压制"
             src = " / ".join(part for part in (
                 f'新 {item.get("window", 0)}' if item.get("window") else "",
@@ -1777,7 +1947,7 @@ def page_section_html(impact: dict | None, as_of: str = "") -> str:
             detail = f'<ul class="sector-evidence"><li>· {esc(shorts)}</li></ul>' if shorts else ""
             rows += (
                 '<li><span class="point-no">主</span>'
-                f'<span class="point-label{" press" if press else ""}">{esc(item.get("theme"))}</span>'
+                f'<span class="point-label{" press" if press else ""}">{esc(_theme_label(item))}</span>'
                 f'<span>{chip(item.get("direction") or "", press)}'
                 f'<span class="sector-stat">{esc(src)}，合成分 {item.get("net", 0):+.2f}</span>'
                 f'{detail}</span></li>'
