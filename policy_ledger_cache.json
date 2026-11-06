@@ -1,0 +1,122 @@
+{
+  "fetched_at": "2026-11-06 07:53",
+  "window": "2026-09-23 至 2026-11-06",
+  "items": [
+    {
+      "title": "北京时间2026年11月5日23时58分，我国在西昌卫星发射中心使用长征二号丙运载火箭，成功将遥感五十一号07-09星发射升空，卫星顺利进入预定轨道，发射任务取得圆满成功。该卫星主要用于科学试验、电磁环境探测等领域。",
+      "url": "https://news.cctv.com/2026/11/06/ARTI0bnGcdLiQ5MBkErTzVYW261106.shtml",
+      "date": "2026-11-05",
+      "source": "cctv"
+    }
+  ],
+  "sources": [
+    {
+      "key": "sc",
+      "issuer": "国务院",
+      "domain": "www.gov.cn",
+      "entry": "https://www.gov.cn/zhengce/zuixin/",
+      "status": "empty",
+      "note": "抓通了，窗口内没有新条目"
+    },
+    {
+      "key": "pbc",
+      "issuer": "中国人民银行",
+      "domain": "www.pbc.gov.cn",
+      "entry": "http://www.pbc.gov.cn",
+      "status": "manual",
+      "note": "只登记入口，靠人工核对"
+    },
+    {
+      "key": "csrc",
+      "issuer": "中国证监会",
+      "domain": "www.csrc.gov.cn",
+      "entry": "https://www.csrc.gov.cn/csrc/xwfb/index.shtml",
+      "status": "empty",
+      "note": "抓通了，窗口内没有新条目"
+    },
+    {
+      "key": "mohurd",
+      "issuer": "住房城乡建设部",
+      "domain": "www.mohurd.gov.cn",
+      "entry": "https://www.mohurd.gov.cn",
+      "status": "manual",
+      "note": "只登记入口，靠人工核对"
+    },
+    {
+      "key": "nfra",
+      "issuer": "国家金融监督管理总局",
+      "domain": "www.nfra.gov.cn",
+      "entry": "https://www.nfra.gov.cn",
+      "status": "manual",
+      "note": "只登记入口，靠人工核对"
+    },
+    {
+      "key": "mof",
+      "issuer": "财政部",
+      "domain": "www.mof.gov.cn",
+      "entry": "https://www.mof.gov.cn/zhengwuxinxi/zhengcefabu/",
+      "status": "empty",
+      "note": "抓通了，窗口内没有新条目"
+    },
+    {
+      "key": "ndrc",
+      "issuer": "国家发展改革委",
+      "domain": "www.ndrc.gov.cn",
+      "entry": "https://www.ndrc.gov.cn/xxgk/zcfb/tz/",
+      "status": "empty",
+      "note": "抓通了，窗口内没有新条目"
+    },
+    {
+      "key": "fed",
+      "issuer": "美联储 FOMC",
+      "domain": "www.federalreserve.gov",
+      "entry": "https://www.federalreserve.gov/newsevents/pressreleases.htm",
+      "status": "empty",
+      "note": "抓通了，窗口内没有新条目"
+    },
+    {
+      "key": "ecb",
+      "issuer": "欧洲央行",
+      "domain": "www.ecb.europa.eu",
+      "entry": "https://www.ecb.europa.eu/press/html/index.en.html",
+      "status": "empty",
+      "note": "抓通了，窗口内没有新条目"
+    },
+    {
+      "key": "boj",
+      "issuer": "日本央行",
+      "domain": "www.boj.or.jp",
+      "entry": "https://www.boj.or.jp/en/mopo/mpmdeci/index.htm",
+      "status": "empty",
+      "note": "抓通了，窗口内没有新条目"
+    },
+    {
+      "key": "ust",
+      "issuer": "美国财政部",
+      "domain": "home.treasury.gov",
+      "entry": "https://home.treasury.gov/news/press-releases",
+      "status": "empty",
+      "note": "抓通了，窗口内没有新条目"
+    },
+    {
+      "key": "cctv",
+      "issuer": "央视新闻",
+      "domain": "cctv.com",
+      "entry": "https://news.cctv.com/",
+      "status": "ok",
+      "note": "窗口内 1 条"
+    },
+    {
+      "key": "xinhua",
+      "issuer": "新华社",
+      "domain": "news.cn",
+      "entry": "http://www.news.cn/politics/",
+      "status": "empty",
+      "note": "抓通了，窗口内没有新条目"
+    }
+  ],
+  "ok": 1,
+  "empty": 9,
+  "error": 0,
+  "manual": 3
+}
